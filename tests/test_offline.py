@@ -110,18 +110,29 @@ PAPERS = [{"paper": {"id": "2610.00001", "title": "Scaling Agents", "summary": "
           {"paper": {"id": "2610.00002", "title": "Minor tweak", "summary": "x", "upvotes": 3}}]
 
 
+MODELS = [{"id": "Qwen/Qwen4-14B-GGUF", "pipeline_tag": "text-generation", "likes": 900, "downloads": 5000,
+           "tags": ["gguf", "license:apache-2.0"]},
+          {"id": "some/asr-model", "pipeline_tag": "automatic-speech-recognition", "likes": 50}]
+
+
 def ai_get(url, timeout=30):
-    return Resp(data=PAPERS) if "daily_papers" in url else Resp(content=RSS)
+    if "daily_papers" in url:
+        return Resp(data=PAPERS)
+    if "api/models" in url:
+        return Resp(data=MODELS)
+    return Resp(content=RSS)
 
 
 ai_digest.http_get = ai_get
 os.environ.pop("ANTHROPIC_API_KEY", None)
 cfg = {"ai_digest": {"sources": [{"name": "Blog", "url": "https://ex.com/rss"},
-                                 {"name": "HF Papers", "type": "hf_papers", "min_upvotes": 30}],
+                                 {"name": "HF Papers", "type": "hf_papers", "min_upvotes": 30},
+                                 {"name": "HF Models", "type": "hf_models", "pipeline_tags": ["text-generation"]}],
+                     "focus": "VRAM16GB以下のローカルAI", "tags": ["ローカルLLM", "その他"],
                      "fallback_keywords": ["llm", "agent"], "lookback_hours": 36}}
 ai_digest.load_config = lambda: cfg
 got = ai_digest.collect(cfg["ai_digest"], set())
-assert [g["id"] for g in got] == ["a", "b", "hfpaper:2610.00001"], got
+assert [g["id"] for g in got] == ["a", "b", "hfpaper:2610.00001", "hfmodel:Qwen/Qwen4-14B-GGUF"], got
 ai_digest.main()
 seen = common.load_state("ai_digest")["seen"]
 assert "a" in seen and "b" in seen
@@ -131,13 +142,19 @@ class FakePost:
     status_code = 200
     def json(self):
         return {"content": [{"type": "text", "text":
-            '{"items":[{"i":0,"title_ja":"新しい推論モデルを発表","summary_ja":"エージェント性能が向上。","tag":"モデル・製品"}]}'}]}
+            '{"items":[{"i":0,"title_ja":"新しい推論モデルを発表","summary_ja":"エージェント性能が向上。","tag":"ローカルLLM"}]}'}]}
 
-ai_digest.requests.post = lambda *a, **k: FakePost()
+SENT = {}
+def fake_post(*a, **k):
+    SENT.update(k["json"])
+    return FakePost()
+ai_digest.requests.post = fake_post
 os.environ["ANTHROPIC_API_KEY"] = "dummy"
 picked = ai_digest.select_with_claude(got, cfg["ai_digest"])
+assert "VRAM16GB以下のローカルAI" in SENT["messages"][0]["content"] and "ローカルLLM／その他" in SENT["messages"][0]["content"]
+assert picked[0]["tag"] == "ローカルLLM"
 assert picked[0]["title_ja"] == "新しい推論モデルを発表" and picked[0]["link"] == "https://ex.com/a"
-for e in ai_digest.build_embeds(picked):
+for e in ai_digest.build_embeds(picked, ai_digest.get_tags(cfg["ai_digest"])):
     print(e["title"], "|", e["description"])
 print("✅ ai_digest")
 

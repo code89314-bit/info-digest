@@ -1,4 +1,4 @@
-"""AI・LLM関連の新着を公式ブログ・論文・HNから集め、要約ダイジェストをDiscordに投稿する。
+"""AI関連の新着をブログ・GitHubリリース・HN・Hugging Faceから集め、要約ダイジェストをDiscordに投稿する。
 
 ANTHROPIC_API_KEY があれば Claude が「中身のある情報」だけを選んで日本語要約する。
 無ければキーワード一致した記事の見出しだけを投稿する。
@@ -16,9 +16,15 @@ import requests
 
 from common import http_get, load_config, load_state, post_discord, save_state, trim_seen
 
-TAG_ORDER = ["モデル・製品", "研究・論文", "ツール・OSS", "業界・政策", "その他"]
-TAG_COLOR = {"モデル・製品": 0x7E57C2, "研究・論文": 0x26A69A, "ツール・OSS": 0x42A5F5,
-             "業界・政策": 0xFFA726, "その他": 0x90A4AE}
+DEFAULT_TAGS = ["モデル・製品", "研究・論文", "ツール・OSS", "業界・政策", "その他"]
+PALETTE = [0x7E57C2, 0x26A69A, 0x42A5F5, 0xFFA726, 0xEC407A, 0x90A4AE]
+
+
+def get_tags(cfg: dict) -> list[str]:
+    tags = list(cfg.get("tags") or DEFAULT_TAGS)
+    if "その他" not in tags:
+        tags.append("その他")
+    return tags
 
 
 def clean(text: str, n: int = 400) -> str:
@@ -61,12 +67,29 @@ def fetch_hf_papers(src: dict, since: float) -> list[dict]:
     return out
 
 
+def fetch_hf_models(src: dict, since: float) -> list[dict]:
+    """Hugging Faceで話題（トレンド）のモデル。初登場のものだけが候補になる。"""
+    url = src.get("url", "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=40")
+    allowed = set(src.get("pipeline_tags") or [])
+    out = []
+    for m in http_get(url).json():
+        mid = m.get("id") or m.get("modelId")
+        if not mid or (allowed and m.get("pipeline_tag") not in allowed):
+            continue
+        tags = [t for t in (m.get("tags") or []) if ":" not in t][:12]
+        out.append({"id": f"hfmodel:{mid}", "title": mid, "link": f"https://huggingface.co/{mid}",
+                    "summary": clean(f"種類: {m.get('pipeline_tag')} / ❤{m.get('likes')} / "
+                                     f"DL {m.get('downloads')} / タグ: {', '.join(tags)}"),
+                    "source": f"{src['name']} (❤{m.get('likes')})"})
+    return out
+
+
 def collect(cfg: dict, seen: set) -> list[dict]:
     since = time.time() - cfg.get("lookback_hours", 36) * 3600
     items, ids = [], set()
     for src in (cfg.get("sources") or []):
         try:
-            fn = fetch_hf_papers if src.get("type") == "hf_papers" else fetch_rss
+            fn = {"hf_papers": fetch_hf_papers, "hf_models": fetch_hf_models}.get(src.get("type"), fetch_rss)
             got = fn(src, since)
             print(f"{src['name']}: {len(got)} 件")
         except Exception as ex:  # 1つのフィードが壊れても他は続行
@@ -80,13 +103,17 @@ def collect(cfg: dict, seen: set) -> list[dict]:
     return items
 
 
-PROMPT = """あなたはAI・LLM分野の情報キュレーターです。以下は過去1日ほどの新着記事の候補です。
+PROMPT = """あなたは情報キュレーターです。以下は過去1日ほどの新着記事・リリース・モデルの候補です。
 読者は「インプレッション稼ぎの定型投稿」にうんざりしており、中身のある一次情報だけを求めています。
 
+読者の関心（これに合うものだけ採用）:
+{focus}
+
 選定基準:
-- 採用: 新モデル・新機能の公式発表、重要な研究成果、実用的なツール/OSS、規制・業界の大きな動き、技術的に深い解説
-- 除外: 宣伝目的・中身の薄い記事、同じ話題の重複（最も一次情報に近いものを1つ残す）、AI以外の話題
-- 興味のあるテーマ（優先）: {interests}
+- 採用: 上の関心に直接役立つ新モデル・新機能・リリース・実用的な手法や検証
+- 除外: {exclude}
+- 除外: 宣伝目的・中身の薄い記事、同じ話題の重複（最も一次情報に近いものを1つ残す）
+- 優先テーマ: {interests}
 - 最大 {max_items} 件。該当が少なければ少なくてよい（0件も可）。
 
 各採用記事について、日本語で:
@@ -107,8 +134,10 @@ def select_with_claude(items: list[dict], cfg: dict) -> list[dict] | None:
         return None
     cands = items[: cfg.get("max_candidates", 120)]
     lines = [f"[{i}] ({it['source']}) {it['title']} — {it['summary'][:300]}" for i, it in enumerate(cands)]
-    prompt = PROMPT.format(interests="、".join((cfg.get("interests") or [])) or "特になし",
-                           max_items=cfg.get("max_items", 12), tags="／".join(TAG_ORDER),
+    focus = (cfg.get("focus") or "AI・LLM全般").strip()
+    exclude = (cfg.get("exclude") or "関心と無関係な話題").strip()
+    prompt = PROMPT.format(focus=focus, exclude=exclude, interests="、".join((cfg.get("interests") or [])) or "特になし",
+                           max_items=cfg.get("max_items", 12), tags="／".join(get_tags(cfg)),
                            candidates="\n".join(lines))
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
@@ -135,7 +164,7 @@ def select_with_claude(items: list[dict], cfg: dict) -> list[dict] | None:
             continue
         out.append({**base, "title_ja": p.get("title_ja") or base["title"],
                     "summary_ja": p.get("summary_ja", ""),
-                    "tag": p.get("tag") if p.get("tag") in TAG_ORDER else "その他"})
+                    "tag": p.get("tag") if p.get("tag") in get_tags(cfg) else "その他"})
     return out
 
 
@@ -146,9 +175,11 @@ def select_by_keywords(items: list[dict], cfg: dict) -> list[dict]:
             for it in hits[: cfg.get("max_items", 12)]]
 
 
-def build_embeds(picked: list[dict]) -> list[dict]:
+def build_embeds(picked: list[dict], tags: list[str] | None = None) -> list[dict]:
+    tags = tags or DEFAULT_TAGS
     embeds = []
-    for tag in TAG_ORDER:
+    for n, tag in enumerate(tags):
+        color = PALETTE[n % len(PALETTE)] if tag != "その他" else 0x90A4AE
         group = [p for p in picked if p["tag"] == tag]
         if not group:
             continue
@@ -160,12 +191,12 @@ def build_embeds(picked: list[dict]) -> list[dict]:
                 entry += f"{p['summary_ja']}\n"
             entry += f"_{p['source']}_\n\n"
             if len(body) + len(entry) > 3800:
-                embeds.append({"title": f"{tag}（{part}）", "description": body.strip(), "color": TAG_COLOR[tag]})
+                embeds.append({"title": f"{tag}（{part}）", "description": body.strip(), "color": color})
                 body, part = "", part + 1
             body += entry
         if body:
             embeds.append({"title": tag if part == 1 else f"{tag}（{part}）",
-                           "description": body.strip(), "color": TAG_COLOR[tag]})
+                           "description": body.strip(), "color": color})
     return embeds
 
 
@@ -186,9 +217,10 @@ def main() -> None:
 
         if picked:
             jst = time.strftime("%m/%d %H:%M", time.gmtime(time.time() + 9 * 3600))
-            post_discord("DISCORD_WEBHOOK_AI", username="AI・LLMダイジェスト",
-                         content=f"🤖 **AI・LLMダイジェスト**（{jst}）候補{len(items)}件から{len(picked)}件",
-                         embeds=build_embeds(picked))
+            title = cfg.get("title") or "AI・LLMダイジェスト"
+            post_discord("DISCORD_WEBHOOK_AI", username=title,
+                         content=f"🤖 **{title}**（{jst}）候補{len(items)}件から{len(picked)}件",
+                         embeds=build_embeds(picked, get_tags(cfg)))
 
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
     save_state("ai_digest", state)

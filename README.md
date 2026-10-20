@@ -7,7 +7,7 @@ GitHub Actions（無料）で定期実行するので、PCやサーバーを動�
 |---|---|---|
 | #地震 | 気象庁の地震・津波情報（P2P地震情報 API 経由） | 5分ごと |
 | #医薬品供給 | 厚労省「医療用医薬品供給状況報告」の新着（New）品目 | 平日 10・13・16・19時台 |
-| #ai-llm | OpenAI / DeepMind / Anthropic / Hugging Face / HN / 論文 → Claudeが選別・日本語要約 | 毎日 7:43・18:43 |
+| #ai-llm | ComfyUI・Ollamaのリリース、Hugging Faceの話題モデル、Zenn、HNなど → VRAM16GB以下のローカルAIに絞ってClaudeが選別・日本語要約 | 毎日 7:43・18:43 |
 
 ---
 

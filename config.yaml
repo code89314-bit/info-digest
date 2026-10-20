@@ -16,34 +16,53 @@ drug_supply:
     # - トラネキサム酸
 
 ai_digest:
+  # Discordに表示する名前
+  title: ローカルAIダイジェスト
   # Claude API のモデル（ANTHROPIC_API_KEY を登録したときだけ使用）
   model: claude-haiku-5-5
   # 1回のダイジェストの最大件数
   max_items: 12
   # 何時間前までの記事を対象にするか
   lookback_hours: 36
-  # 優先したいテーマ（Claudeが選ぶときの参考）
+
+  # ---- 何を拾うか（Claudeへの指示。自由に書き換えてOK） ----
+  focus: |
+    VRAM 16GB以下のGPU（RTX 4060 Ti 16GB / 4070系など）で動かせる、ローカル実行のAI。
+    - ComfyUI：本体のアップデート、新しいモデル対応、カスタムノード、ワークフロー、省VRAM化の手法
+    - 画像・動画生成モデル（Flux、SDXL、Wan、HunyuanVideo 等）のうち16GBで動くもの・量子化版（GGUF/FP8/NF4）
+    - ローカルLLM：llama.cpp / Ollama / LM Studio、GGUF量子化、16GBに収まるサイズ（〜30B程度の量子化まで）の新モデル
+  exclude: |
+    クラウド専用・API専用のサービスやモデル、24GB以上のVRAMが前提のもの（量子化して16GBに収まるなら採用）、
+    企業の資金調達・経営ニュース、AI規制や政策の話題、一般向けのAI活用ハウツー
   interests:
-    - LLMの新モデル・新機能
-    - エージェント・コーディング支援
-    - 医療・ヘルスケアへのAI応用
-    - 日本語LLM
+    - 16GB VRAMで動く新モデル
+    - ComfyUIの新機能・新ワークフロー
+    - 日本語に強いローカルLLM
+  # 見出しの分類
+  tags: [ComfyUI・画像/動画生成, ローカルLLM, ツール・アップデート, その他]
+
   # APIキーなしで動かす場合の絞り込みキーワード（大文字小文字は区別しない）
-  fallback_keywords: [llm, gpt, claude, gemini, agent, transformer, 生成AI, 大規模言語モデル]
+  fallback_keywords: [comfyui, gguf, llama.cpp, ollama, lm studio, local, quantiz, vram, flux, wan, ローカル]
 
   sources:
-    - name: OpenAI
-      url: https://openai.com/news/rss.xml
-    - name: Google DeepMind
-      url: https://deepmind.google/blog/rss.xml
+    - name: ComfyUI リリース
+      url: https://github.com/Comfy-Org/ComfyUI/releases.atom
+    - name: Ollama リリース
+      url: https://github.com/ollama/ollama/releases.atom
     - name: Hugging Face Blog
       url: https://huggingface.co/blog/feed.xml
-    - name: Anthropic（有志作成フィード）
-      url: https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml
     - name: Simon Willison
       url: https://simonwillison.net/atom/everything/
-    - name: Hacker News（100pt以上）
-      url: https://hnrss.org/newest?q=LLM+OR+GPT+OR+Claude+OR+Gemini+OR+%22AI+agent%22&points=100
-    - name: HF Daily Papers
-      type: hf_papers
-      min_upvotes: 30
+    - name: Hacker News（50pt以上）
+      url: https://hnrss.org/newest?q=ComfyUI+OR+llama.cpp+OR+Ollama+OR+GGUF+OR+%22local+LLM%22+OR+%22LM+Studio%22&points=50
+    - name: Zenn #ComfyUI
+      url: https://zenn.dev/topics/comfyui/feed
+    - name: Zenn #Ollama
+      url: https://zenn.dev/topics/ollama/feed
+    - name: Zenn #llama.cpp
+      url: https://zenn.dev/topics/llamacpp/feed
+    - name: HF トレンドモデル
+      type: hf_models
+      # 対象にするモデルの種類（空にすると全種類）
+      pipeline_tags: [text-generation, image-text-to-text, text-to-image, image-to-image,
+                      text-to-video, image-to-video]
