@@ -7,7 +7,7 @@ GitHub Actions（無料）で定期実行するので、PCやサーバーを動�
 |---|---|---|
 | #地震 | 気象庁の地震・津波情報（P2P地震情報 API 経由） | 5分ごと |
 | #医薬品供給 | 厚労省「医療用医薬品供給状況報告」の新着（New）品目 | 平日 10・13・16・19時台 |
-| #ai-llm | ComfyUI・Ollamaのリリース、Hugging Faceの話題モデル、Zenn、HNなど → VRAM16GB以下のローカルAIに絞ってClaudeが選別・日本語要約 | 毎日 7:43・18:43 |
+| #ai-llm | Zenn・Qiitaの日本語記事（ComfyUI・ローカルLLMなど）→ VRAM16GB以下で役立つものをClaudeが選別・要約 | 毎日 7:43・18:43 |
 
 ---
 
@@ -98,4 +98,4 @@ tests/test_offline.py       ネット接続なしの動作テスト
 
 - 地震・津波：気象庁発表情報（[P2P地震情報](https://www.p2pquake.net/) JSON API v2 経由）
 - 医薬品：[厚生労働省 医療用医薬品供給状況報告](https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/kouhatu-iyaku/04_00003.html)
-- AI：各社公式ブログRSS、Hacker News（hnrss.org）、Hugging Face Daily Papers
+- AI：Zenn・Qiita のタグ別新着フィード

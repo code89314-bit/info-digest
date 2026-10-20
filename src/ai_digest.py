@@ -96,9 +96,9 @@ def collect(cfg: dict, seen: set) -> list[dict]:
             print(f"⚠ {src['name']} 取得失敗: {ex}")
             continue
         for it in got:
-            if it["id"] in seen or it["id"] in ids or not it["title"]:
+            if it["id"] in seen or it["id"] in ids or it["link"] in ids or not it["title"]:
                 continue
-            ids.add(it["id"])
+            ids.update({it["id"], it["link"]})
             items.append(it)
     return items
 

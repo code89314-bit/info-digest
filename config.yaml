@@ -31,6 +31,7 @@ ai_digest:
     - ComfyUI：本体のアップデート、新しいモデル対応、カスタムノード、ワークフロー、省VRAM化の手法
     - 画像・動画生成モデル（Flux、SDXL、Wan、HunyuanVideo 等）のうち16GBで動くもの・量子化版（GGUF/FP8/NF4）
     - ローカルLLM：llama.cpp / Ollama / LM Studio、GGUF量子化、16GBに収まるサイズ（〜30B程度の量子化まで）の新モデル
+    実際に手元で試した検証記事（速度・VRAM使用量・設定値などの具体的な数字があるもの）を特に優先。
   exclude: |
     クラウド専用・API専用のサービスやモデル、24GB以上のVRAMが前提のもの（量子化して16GBに収まるなら採用）、
     企業の資金調達・経営ニュース、AI規制や政策の話題、一般向けのAI活用ハウツー
@@ -44,25 +45,27 @@ ai_digest:
   # APIキーなしで動かす場合の絞り込みキーワード（大文字小文字は区別しない）
   fallback_keywords: [comfyui, gguf, llama.cpp, ollama, lm studio, local, quantiz, vram, flux, wan, ローカル]
 
+  # 日本語の記事だけを対象にする（Zenn・Qiitaのタグ別新着）
   sources:
-    - name: ComfyUI リリース
-      url: https://github.com/Comfy-Org/ComfyUI/releases.atom
-    - name: Ollama リリース
-      url: https://github.com/ollama/ollama/releases.atom
-    - name: Hugging Face Blog
-      url: https://huggingface.co/blog/feed.xml
-    - name: Simon Willison
-      url: https://simonwillison.net/atom/everything/
-    - name: Hacker News（50pt以上）
-      url: https://hnrss.org/newest?q=ComfyUI+OR+llama.cpp+OR+Ollama+OR+GGUF+OR+%22local+LLM%22+OR+%22LM+Studio%22&points=50
     - name: Zenn #ComfyUI
       url: https://zenn.dev/topics/comfyui/feed
+    - name: Zenn #StableDiffusion
+      url: https://zenn.dev/topics/stablediffusion/feed
+    - name: Zenn #ローカルLLM
+      url: https://zenn.dev/topics/localllm/feed
     - name: Zenn #Ollama
       url: https://zenn.dev/topics/ollama/feed
     - name: Zenn #llama.cpp
       url: https://zenn.dev/topics/llamacpp/feed
-    - name: HF トレンドモデル
-      type: hf_models
-      # 対象にするモデルの種類（空にすると全種類）
-      pipeline_tags: [text-generation, image-text-to-text, text-to-image, image-to-image,
-                      text-to-video, image-to-video]
+    - name: Zenn #LM Studio
+      url: https://zenn.dev/topics/lmstudio/feed
+    - name: Qiita #ComfyUI
+      url: https://qiita.com/tags/comfyui/feed
+    - name: Qiita #StableDiffusion
+      url: https://qiita.com/tags/stablediffusion/feed
+    - name: Qiita #ローカルLLM
+      url: https://qiita.com/tags/%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%ABllm/feed
+    - name: Qiita #Ollama
+      url: https://qiita.com/tags/ollama/feed
+    - name: Qiita #llama.cpp
+      url: https://qiita.com/tags/llama.cpp/feed
