@@ -107,7 +107,7 @@ def should_post(item: dict, cfg: dict) -> bool:
 
 
 def main() -> None:
-    cfg = load_config().get("earthquake", {})
+    cfg = load_config().get("earthquake") or {}
     state = load_state("earthquake")
     seen = state.get("seen", [])
     first_run = not state

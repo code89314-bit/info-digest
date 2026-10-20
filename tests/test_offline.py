@@ -83,6 +83,8 @@ def fake_get(url, timeout=30):
 
 
 drug_supply.http_get = fake_get
+drug_supply.load_config = lambda: {"drug_supply": {"watchlist": None}}
+drug_supply.build_embeds(drug_supply.parse_xlsx(buf.getvalue()), "x", "u", {"watchlist": None})
 drug_supply.load_config = lambda: {"drug_supply": {"watchlist": ["アモキシシリン"]}}
 items = drug_supply.parse_xlsx(buf.getvalue())
 assert len(items) == 3, items

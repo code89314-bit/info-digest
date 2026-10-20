@@ -101,7 +101,7 @@ def line(it: dict) -> str:
 
 def build_embeds(items: list[dict], label: str, url: str, cfg: dict) -> list[dict]:
     max_items = cfg.get("max_items_per_section", 25)
-    watch = [w for w in cfg.get("watchlist", []) if w]
+    watch = [w for w in (cfg.get("watchlist") or []) if w]
     groups = {"stop": [], "limited": [], "normal": [], "other": []}
     for it in items:
         groups[classify(it["ship"])].append(it)
@@ -134,7 +134,7 @@ def build_embeds(items: list[dict], label: str, url: str, cfg: dict) -> list[dic
 
 
 def main() -> None:
-    cfg = load_config().get("drug_supply", {})
+    cfg = load_config().get("drug_supply") or {}
     state = load_state("drug_supply")
 
     html = http_get(PAGE).content.decode("utf-8", errors="replace")

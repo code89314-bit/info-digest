@@ -64,7 +64,7 @@ def fetch_hf_papers(src: dict, since: float) -> list[dict]:
 def collect(cfg: dict, seen: set) -> list[dict]:
     since = time.time() - cfg.get("lookback_hours", 36) * 3600
     items, ids = [], set()
-    for src in cfg.get("sources", []):
+    for src in (cfg.get("sources") or []):
         try:
             fn = fetch_hf_papers if src.get("type") == "hf_papers" else fetch_rss
             got = fn(src, since)
@@ -107,7 +107,7 @@ def select_with_claude(items: list[dict], cfg: dict) -> list[dict] | None:
         return None
     cands = items[: cfg.get("max_candidates", 120)]
     lines = [f"[{i}] ({it['source']}) {it['title']} — {it['summary'][:300]}" for i, it in enumerate(cands)]
-    prompt = PROMPT.format(interests="、".join(cfg.get("interests", [])) or "特になし",
+    prompt = PROMPT.format(interests="、".join((cfg.get("interests") or [])) or "特になし",
                            max_items=cfg.get("max_items", 12), tags="／".join(TAG_ORDER),
                            candidates="\n".join(lines))
     r = requests.post(
@@ -140,7 +140,7 @@ def select_with_claude(items: list[dict], cfg: dict) -> list[dict] | None:
 
 
 def select_by_keywords(items: list[dict], cfg: dict) -> list[dict]:
-    kws = [k.lower() for k in cfg.get("fallback_keywords", [])]
+    kws = [k.lower() for k in (cfg.get("fallback_keywords") or [])]
     hits = [it for it in items if not kws or any(k in (it["title"] + it["summary"]).lower() for k in kws)]
     return [{**it, "title_ja": it["title"], "summary_ja": "", "tag": "その他"}
             for it in hits[: cfg.get("max_items", 12)]]
@@ -170,7 +170,7 @@ def build_embeds(picked: list[dict]) -> list[dict]:
 
 
 def main() -> None:
-    cfg = load_config().get("ai_digest", {})
+    cfg = load_config().get("ai_digest") or {}
     state = load_state("ai_digest")
     seen = state.get("seen", [])
 
