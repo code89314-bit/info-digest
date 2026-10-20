@@ -1,0 +1,49 @@
+# ==== 設定ファイル（ここを編集すれば挙動を変えられます） ====
+
+earthquake:
+  # 投稿する最小震度  10=1, 20=2, 30=3, 40=4, 45=5弱, 50=5強, 55=6弱, 60=6強, 70=7
+  min_scale: 30
+  # 津波予報（警報・注意報）を投稿するか
+  tsunami: true
+
+drug_supply:
+  # 各区分で一覧表示する最大件数（超えた分は「ほか○件」）
+  max_items_per_section: 25
+  # 気になる成分名・品名（部分一致）。該当すると⭐で別枠表示されます
+  watchlist:
+    # - アモキシシリン
+    # - カルボシステイン
+    # - トラネキサム酸
+
+ai_digest:
+  # Claude API のモデル（ANTHROPIC_API_KEY を登録したときだけ使用）
+  model: claude-haiku-5-5
+  # 1回のダイジェストの最大件数
+  max_items: 12
+  # 何時間前までの記事を対象にするか
+  lookback_hours: 36
+  # 優先したいテーマ（Claudeが選ぶときの参考）
+  interests:
+    - LLMの新モデル・新機能
+    - エージェント・コーディング支援
+    - 医療・ヘルスケアへのAI応用
+    - 日本語LLM
+  # APIキーなしで動かす場合の絞り込みキーワード（大文字小文字は区別しない）
+  fallback_keywords: [llm, gpt, claude, gemini, agent, transformer, 生成AI, 大規模言語モデル]
+
+  sources:
+    - name: OpenAI
+      url: https://openai.com/news/rss.xml
+    - name: Google DeepMind
+      url: https://deepmind.google/blog/rss.xml
+    - name: Hugging Face Blog
+      url: https://huggingface.co/blog/feed.xml
+    - name: Anthropic（有志作成フィード）
+      url: https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml
+    - name: Simon Willison
+      url: https://simonwillison.net/atom/everything/
+    - name: Hacker News（100pt以上）
+      url: https://hnrss.org/newest?q=LLM+OR+GPT+OR+Claude+OR+Gemini+OR+%22AI+agent%22&points=100
+    - name: HF Daily Papers
+      type: hf_papers
+      min_upvotes: 30
