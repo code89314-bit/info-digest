@@ -328,9 +328,21 @@ def build_embeds(picked: list[dict], tags: list[str] | None = None) -> list[dict
     return embeds
 
 
-def main() -> None:
-    cfg = load_config().get("ai_digest") or {}
-    state = load_state("ai_digest")
+def section_config(section: str) -> dict:
+    """config.yaml の区画（ai_digest / ai_global など）。llm を書いていない区画は ai_digest の llm を使う。"""
+    full = load_config()
+    cfg = dict(full.get(section) or {})
+    if "llm" not in cfg and section != "ai_digest":
+        cfg["llm"] = (full.get("ai_digest") or {}).get("llm")
+    return cfg
+
+
+def main(section: str = "ai_digest") -> None:
+    """section: config.yaml の区画名。既読管理（state/<section>.json）も区画ごとに別。"""
+    cfg = section_config(section)
+    if not cfg:
+        raise SystemExit(f"config.yaml に {section}: がありません")
+    state = load_state(section)
     seen = state.get("seen", [])
 
     items = collect(cfg, set(seen))
@@ -347,13 +359,15 @@ def main() -> None:
         if picked:
             jst = time.strftime("%m/%d %H:%M", time.gmtime(time.time() + 9 * 3600))
             title = cfg.get("title") or "AI・LLMダイジェスト"
-            post_discord("DISCORD_WEBHOOK_AI", username=title,
+            post_discord(cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI", username=title,
                          content=f"🤖 **{title}**（{jst}）候補{len(items)}件から{len(picked)}件",
                          embeds=build_embeds(picked, get_tags(cfg)))
 
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
-    save_state("ai_digest", state)
+    save_state(section, state)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # 使い方: python src/ai_digest.py            → ai_digest（日本語記事）
+    #         python src/ai_digest.py ai_global  → ai_global（海外の話題）
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "ai_digest"))

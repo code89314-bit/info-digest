@@ -103,6 +103,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 秘密情報は `.env`（`common.load_dotenv()` が読む）。既読管理は `INFO_DIGEST_STATE_DIR=D:\info-digest\.local\state`（`state/ai_digest.json` の内容で初期化済み）。`.env` `.venv/` `.local/` は `.gitignore` 済み。
 - 定期実行: タスクスケジューラ「info-digest AI」が毎日 7:43 / 18:43 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
 - `.github/workflows/ai_digest.yml` の `schedule:` はコメントアウト（`workflow_dispatch` は残した）。
+- 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 8:13 / 19:13。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
 
 ## 4. 将来の拡張案（ユーザーと相談済み・未着手）
 

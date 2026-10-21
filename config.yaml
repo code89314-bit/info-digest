@@ -99,3 +99,59 @@ ai_digest:
       url: https://qiita.com/tags/ollama/feed
     - name: "Qiita #llama.cpp"
       url: https://qiita.com/tags/llama.cpp/feed
+
+# ==== 海外のAI話題（英語の情報源 → LLMが日本語で要約） ====
+# 上の ai_digest（日本語記事・#ai-llm）とは別のチャンネルに投稿します。既読管理も別です。
+# llm: を書かなければ、上の ai_digest の llm と同じサーバー・モデルを使います。
+ai_global:
+  # Discordに表示する名前
+  title: 海外AIダイジェスト
+  # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
+  webhook_env: DISCORD_WEBHOOK_AI_GLOBAL
+  # 1回のダイジェストの最大件数
+  max_items: 10
+  # LLMに見せる候補の最大数（多いほど時間がかかる。25件で約1分）
+  max_candidates: 150
+  # 何時間前までの記事を対象にするか
+  lookback_hours: 36
+
+  # ---- 何を拾うか（LLMへの指示。自由に書き換えてOK） ----
+  focus: |
+    英語圏で話題になっている、VRAM 16GB以下のGPU（RTX 4060 Ti 16GB / 4070系など）で動かせるローカル実行のAI。
+    - ローカルLLM：新モデル（〜30B程度の量子化まで）、llama.cpp / Ollama / LM Studio の新機能、GGUF量子化
+    - ComfyUI・画像/動画生成：本体の更新、16GBで動く新モデル・量子化版、新しいワークフローや省VRAM化の手法
+    コミュニティで評判の良い（実際に試した人の報告が多い）ものを特に優先。
+  exclude: |
+    クラウド専用・API専用のサービスやモデル、24GB以上のVRAMが前提のもの（量子化して16GBに収まるなら採用）、
+    企業の資金調達・経営ニュース、AI規制や政策の話題、質問だけの投稿・ミーム・雑談、自作品の見せびらかしだけの投稿
+  interests:
+    - 16GB VRAMで動く新モデル
+    - ComfyUIの新機能・新ワークフロー
+    - 日本語に強いローカルLLM
+  # 見出しの分類
+  tags: [ComfyUI・画像/動画生成, ローカルLLM, ツール・アップデート, その他]
+
+  # LLMが使えないときの絞り込みキーワード（大文字小文字は区別しない）
+  fallback_keywords: [comfyui, gguf, llama.cpp, ollama, lm studio, local, quantiz, vram, flux, wan]
+
+  # 英語の情報源
+  sources:
+    # Reddit：その日の上位投稿（コミュニティで話題のもの）
+    - name: "Reddit r/LocalLLaMA"
+      url: https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day&limit=25
+    - name: "Reddit r/comfyui"
+      url: https://www.reddit.com/r/comfyui/top/.rss?t=day&limit=25
+    - name: "Reddit r/StableDiffusion"
+      url: https://www.reddit.com/r/StableDiffusion/top/.rss?t=day&limit=25
+    # Hacker News：LLMの話題で100点以上
+    - name: Hacker News
+      url: https://hnrss.org/newest?q=LLM&points=100
+    # Hugging Face：トレンド入りしたモデル（初登場のものだけ）。種類で絞る
+    - name: HF トレンド
+      type: hf_models
+      pipeline_tags: [text-generation, image-text-to-text, any-to-any, text-to-image, image-to-image, text-to-video, image-to-video]
+    # 本体のリリース
+    - name: ComfyUI リリース
+      url: https://github.com/Comfy-Org/ComfyUI/releases.atom
+    - name: Ollama リリース
+      url: https://github.com/ollama/ollama/releases.atom

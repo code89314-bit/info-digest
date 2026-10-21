@@ -57,7 +57,16 @@ def trim_seen(seen: list, keep: int = 2000) -> list:
 
 
 def http_get(url: str, timeout: int = 30) -> requests.Response:
-    r = requests.get(url, headers=UA, timeout=timeout)
+    """GET。429（Redditなどのレート制限）は Retry-After か 15/30/60 秒待って最大3回やり直す。"""
+    for attempt in range(4):
+        r = requests.get(url, headers=UA, timeout=timeout)
+        if r.status_code != 429 or attempt == 3:
+            break
+        try:
+            wait = float(r.headers.get("Retry-After") or 0)
+        except ValueError:
+            wait = 0
+        time.sleep(min(max(wait, 15 * 2 ** attempt), 120))
     r.raise_for_status()
     return r
 

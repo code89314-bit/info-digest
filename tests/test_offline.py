@@ -249,6 +249,39 @@ assert os.environ["INFO_DIGEST_TEST_A"] == "1" and os.environ["INFO_DIGEST_TEST_
 assert os.environ["LOCAL_LLM_API_KEY"] == "local-key"
 print("✅ dotenv")
 
+# ---------- 区画（ai_global）：投稿先・既読管理は別、llm は ai_digest のものを使う ----------
+GCFG = {"ai_digest": {"llm": {"provider": "openai_compat", "model": "shared-model", "base_url": "http://llm.local/v1"}},
+        "ai_global": {"title": "海外AI", "webhook_env": "DISCORD_WEBHOOK_AI_GLOBAL",
+                      "sources": [{"name": "Reddit", "url": "https://ex.com/rss"}], "tags": ["ローカルLLM", "その他"]}}
+ai_digest.load_config = lambda: GCFG
+assert ai_digest.section_config("ai_global")["llm"]["model"] == "shared-model"
+POSTED = []
+ai_digest.post_discord = lambda env, **k: POSTED.append((env, k["username"]))
+ai_digest.requests.post = lambda *a, **k: FakeChat(chat_reply(
+    [{"i": 0, "title_ja": "新しい推論モデル", "summary_ja": "要約", "tag": "ローカルLLM", "score": 4}]))
+ai_digest.main("ai_global")
+assert POSTED == [("DISCORD_WEBHOOK_AI_GLOBAL", "海外AI")], POSTED
+assert "a" in common.load_state("ai_global")["seen"]
+print("✅ ai_global")
+
+# ---------- 429（レート制限）は待ってやり直す ----------
+class R429:
+    def __init__(self, code):
+        self.status_code = code
+        self.headers = {"Retry-After": "1"}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+
+
+SEQ, SLEPT = [429, 429, 200], []
+common.requests.get = lambda *a, **k: R429(SEQ.pop(0))
+common.time.sleep = lambda s: SLEPT.append(s)
+assert common.http_get("https://www.reddit.com/r/x/.rss").status_code == 200
+assert SLEPT == [15, 30], SLEPT
+print("✅ http 429 retry")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500
