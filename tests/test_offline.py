@@ -572,7 +572,8 @@ assert "今週より前の出来事（8/26）" in memo and "出典が報道（ex
 assert "音声版" not in md and "音声" not in r["html"].read_text(encoding="utf-8")   # podcast が無ければ節ごと省く
 d2 = note_weekly.build(note_weekly.load_style(NWCFG), {"headline_1": "a", "headline_2": "b", "three_lines": [], "hashtags": []},
                        [], dt.date(2026, 10, 18), dt.date(2026, 10, 24), "2026-W43.mp3")
-assert "「2026-W43.mp3」を埋め込み" in note_weekly.to_markdown(d2, [])
+md2 = note_weekly.to_markdown(d2, [])
+assert "「2026-W43.mp3」を埋め込み" in md2 and md2.index("音声版") < md2.index("目次を挿入")   # 音声は3行のすぐ下
 assert "使わない語「画期的」" in memo and "感嘆符" in memo and "40字超" in memo
 assert "<h2>ガイドライン</h2>" in r["html"].read_text(encoding="utf-8")
 print("✅ note_weekly")

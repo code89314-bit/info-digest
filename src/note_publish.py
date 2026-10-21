@@ -101,6 +101,14 @@ PASTE_JS = """(html) => {
 }"""
 
 
+def _press_save(page) -> None:
+    """押すのは「下書き保存」だけ（公開・投稿のボタンには触らない）。"""
+    save = page.get_by_role("button", name="下書き保存").first
+    save.wait_for(timeout=30000)
+    save.click()
+    page.wait_for_timeout(5000)
+
+
 TOC_MARK = "ここに note の目次を挿入"
 AUDIO_MARK = "ここに音声ファイル"
 
@@ -124,10 +132,14 @@ def _empty_line_at(page, mark: str, after_heading: str | None = None) -> bool:
         return False
     para.scroll_into_view_if_needed()
     para.click()
-    page.keyboard.press("End")
-    page.keyboard.press("Shift+Home")
+    # 段落の中身をまるごと選んで消す（End / Shift+Home だと折り返した1行分しか選べない）
+    para.evaluate("""p => { const r = document.createRange(); r.selectNodeContents(p);
+                         const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    page.wait_for_timeout(300)
     page.keyboard.press("Delete")
     page.wait_for_timeout(800)
+    if para.count() and para.inner_text().strip():
+        raise RuntimeError(f"位置メモを消しきれませんでした: {para.inner_text()[:30]}")
     return True
 
 
@@ -161,9 +173,37 @@ def _remove_empty_quotes(page) -> int:
     return n
 
 
-def finish(page, audio: dict | None) -> list[str]:
-    """本文を入れたあとの仕上げ: 空の引用を消す・目次を入れる・音声を埋め込む。できなかったことを返す（下書きは残す）。"""
+def set_cover(page, path: str) -> None:
+    """記事のトップ画像（見出し画像）をアップロードする（タイトルの上の「画像を追加」→ 画像をアップロード → 保存）。"""
+    page.get_by_role("button", name="画像を追加").first.click()
+    page.wait_for_timeout(1000)
+    with page.expect_file_chooser(timeout=15000) as fc:
+        page.get_by_text("画像をアップロード").first.click()
+    fc.value.set_files(path)
+    page.wait_for_timeout(4000)   # 切り抜き画面に画像が読み込まれるのを待つ（早く押すと効かない）
+    cancel = page.get_by_role("button", name="キャンセル", exact=True).last
+    cancel.wait_for(timeout=60000)
+    for _ in range(3):            # 切り抜き画面の「保存」。閉じなければ押し直す
+        page.get_by_role("button", name="保存", exact=True).last.click()
+        try:
+            cancel.wait_for(state="hidden", timeout=30000)
+            break
+        except Exception:   # noqa: BLE001
+            page.wait_for_timeout(2000)
+    else:
+        page.keyboard.press("Escape")   # 開いたままだと「下書き保存」が押せないので閉じる
+        raise RuntimeError("トップ画像の切り抜き画面が閉じませんでした")
+    page.wait_for_timeout(3000)
+
+
+def finish(page, audio: dict | None, cover: str | None = None) -> list[str]:
+    """本文を入れたあとの仕上げ: トップ画像・空の引用を消す・目次・音声。できなかったことを返す（下書きは残す）。"""
     todo = []
+    if cover:
+        try:
+            set_cover(page, cover)
+        except Exception as ex:   # noqa: BLE001
+            todo.append(f"トップ画像を入れられませんでした（手で: {cover}）（{str(ex)[:80]}）")
     try:
         _remove_empty_quotes(page)
     except Exception as ex:   # noqa: BLE001
@@ -194,8 +234,8 @@ def finish(page, audio: dict | None) -> list[str]:
     return todo
 
 
-def save_draft(title: str, body_html: str, *, audio: dict | None = None, headless: bool = False,
-               edit_url: str | None = None) -> tuple[str, list[str]]:
+def save_draft(title: str, body_html: str, *, audio: dict | None = None, cover: str | None = None,
+               headless: bool = False, edit_url: str | None = None) -> tuple[str, list[str]]:
     """新しい記事にタイトルと本文を入れ、仕上げ（目次・音声）をして「下書き保存」する。公開はしない。
 
     edit_url を渡すと、その下書きを開いて仕上げだけ行う。戻り値は（編集画面のURL, できなかったこと）。
@@ -221,12 +261,14 @@ def save_draft(title: str, body_html: str, *, audio: dict | None = None, headles
                 page.wait_for_timeout(3000)
                 if len(body.inner_text().strip()) < 50:
                     raise RuntimeError("本文を貼り付けられませんでした（note の画面が変わった可能性）")
-            todo = finish(page, audio)
-            # 押すのは「下書き保存」だけ（公開・投稿のボタンには触らない）
-            save = page.get_by_role("button", name="下書き保存").first
-            save.wait_for(timeout=30000)
-            save.click()
-            page.wait_for_timeout(5000)
+                # いったん下書き保存して開き直す（新しい記事は保存するまでトップ画像のボタンが使えない）
+                _press_save(page)
+                edit_url = page.url
+                page.goto(edit_url, wait_until="domcontentloaded")
+                page.wait_for_timeout(8000)
+                page.locator('.ProseMirror[contenteditable="true"]').first.wait_for(timeout=60000)
+            todo = finish(page, audio, cover)
+            _press_save(page)
             _shot(page, "saved")
             print("note に下書き保存しました:", page.url, *(f"\n  未完了: {t}" for t in todo))
             return page.url, todo
@@ -246,8 +288,8 @@ def main(argv: list[str]) -> None:
     elif "--draft" in argv:
         doc = json.loads(Path(argv[argv.index("--draft") + 1]).read_text(encoding="utf-8"))
         edit = argv[argv.index("--finish") + 1] if "--finish" in argv else None
-        save_draft(doc["title"], doc["body_html"], audio=doc.get("audio"), headless="--headless" in argv,
-                   edit_url=edit)
+        save_draft(doc["title"], doc["body_html"], audio=doc.get("audio"), cover=doc.get("cover_image"),
+                   headless="--headless" in argv, edit_url=edit)
     else:
         print(__doc__)
 

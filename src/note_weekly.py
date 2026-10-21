@@ -252,7 +252,11 @@ def to_markdown(doc: dict, memo: list[str]) -> str:
         md += [f"> **{doc['opening_heading']}**  "] + [f"> {x}  " for x in doc["opening"].splitlines()] + [""]
     md += [doc["greeting"], "", "**今週の3行**", ""]
     md += [f"- {x}" for x in doc["three_lines"]]
-    md += ["", "※ここに note の目次を挿入", ""]
+    md.append("")
+    if doc["audio"]:   # 音声版は「今週の3行」（結論）のすぐ下
+        md += [f"## {doc['audio_heading']}", "", doc["audio_body"].replace("\n", "  \n"), "",
+               f"※ここに音声ファイル「{doc['audio']}」を埋め込み（note の「＋」→ 音声）", ""]
+    md += ["※ここに note の目次を挿入", ""]
     for theme, ts in themes_in(doc):
         md += [f"## {theme}", ""]
         for t in ts:
@@ -266,9 +270,6 @@ def to_markdown(doc: dict, memo: list[str]) -> str:
     md += [f"## {doc['links_heading']}", ""]
     md += [f"- {t['heading']}：{t['url']}" for t in doc["topics"] if t["url"]]
     md += ["", f"## {doc['afterword_heading']}", "", doc["afterword"], ""]
-    if doc["audio"]:
-        md += [f"## {doc['audio_heading']}", "", doc["audio_body"].replace("\n", "  \n"), "",
-               f"※ここに音声ファイル「{doc['audio']}」を埋め込み（note の「＋」→ 音声）", ""]
     md += [doc["footer"].replace("\n", "  \n"), "",
            " ".join(f"#{h}" for h in doc["hashtags"])]
     if memo:
@@ -282,8 +283,12 @@ def body_html(doc: dict) -> str:
     b = [(f"<blockquote><p><strong>{e(doc['opening_heading'])}</strong><br>"
           + "<br>".join(e(x) for x in doc["opening"].splitlines()) + "</p></blockquote>" if doc["opening"] else ""),
          f"<p>{e(doc['greeting'])}</p>", "<p><strong>今週の3行</strong></p>",
-         "<ul>" + "".join(f"<li>{e(x)}</li>" for x in doc["three_lines"]) + "</ul>",
-         "<p>※ここに note の目次を挿入</p>"]
+         "<ul>" + "".join(f"<li>{e(x)}</li>" for x in doc["three_lines"]) + "</ul>"]
+    if doc["audio"]:   # 音声版は「今週の3行」（結論）のすぐ下
+        b += [f"<h2>{e(doc['audio_heading'])}</h2>",
+              "<p>" + "<br>".join(e(x) for x in doc["audio_body"].splitlines()) + "</p>",
+              f"<p>※ここに音声ファイル「{e(doc['audio'])}」を埋め込み（note の「＋」→ 音声）</p>"]
+    b.append("<p>※ここに note の目次を挿入</p>")
     for theme, ts in themes_in(doc):
         b.append(f"<h2>{e(theme)}</h2>")
         for t in ts:
@@ -299,10 +304,6 @@ def body_html(doc: dict) -> str:
     b.append("<ul>" + "".join(f'<li>{e(t["heading"])}：<a href="{e(t["url"])}">{e(t["url"])}</a></li>'
                               for t in doc["topics"] if t["url"]) + "</ul>")
     b += [f"<h2>{e(doc['afterword_heading'])}</h2>", f"<p>{e(doc['afterword'])}</p>"]
-    if doc["audio"]:
-        b += [f"<h2>{e(doc['audio_heading'])}</h2>",
-              "<p>" + "<br>".join(e(x) for x in doc["audio_body"].splitlines()) + "</p>",
-              f"<p>※ここに音声ファイル「{e(doc['audio'])}」を埋め込み（note の「＋」→ 音声）</p>"]
     b += ["<p>" + "<br>".join(e(x) for x in doc["footer"].splitlines()) + "</p>",
           "<p>" + " ".join(e(f"#{h}") for h in doc["hashtags"]) + "</p>"]
     return "\n".join(x for x in b if x)
@@ -427,6 +428,19 @@ def find_audio(cfg: dict, style: dict, start: dt.date, end: dt.date, dest):
     return dest
 
 
+def make_cover_image(cfg: dict, start: dt.date, end: dt.date, dest):
+    """トップ画像（scripts/make_cover.py。過去の投稿のテイストの手描き風、背景色は週ごとに変わる）。"""
+    if not cfg.get("cover_image", True):
+        return None
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import make_cover
+        return make_cover.make_cover(start, end, dest)
+    except Exception as ex:   # noqa: BLE001  画像は「おまけ」
+        print("トップ画像を作れませんでした:", ex)
+        return None
+
+
 def audio_meta(cfg: dict, style: dict, audio, start: dt.date, end: dt.date) -> dict | None:
     """note の音声埋め込みに入れる情報（ファイル・カバー画像・タイトル・作者）。"""
     if not audio:
@@ -476,15 +490,17 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
     html_path.write_text(to_html(doc, memo), encoding="utf-8")
     json_path = out_dir / f"{y}-W{w:02d}.json"   # note への下書き保存（やり直しは note_publish.py --draft）に使う
     audio_info = audio_meta(cfg, style, audio, start, end)
-    json_path.write_text(json.dumps({"title": doc["title"], "body_html": body_html(doc), "audio": audio_info},
-                                    ensure_ascii=False), encoding="utf-8")
+    cover = make_cover_image(cfg, start, end, out_dir / f"{y}-W{w:02d}-cover.png")
+    json_path.write_text(json.dumps({"title": doc["title"], "body_html": body_html(doc), "audio": audio_info,
+                                     "cover_image": str(cover) if cover else None}, ensure_ascii=False),
+                         encoding="utf-8")
     print(f"下書きを保存しました: {md_path}\n                    {html_path}\nトピック {len(topics)} 件・確認メモ {len(memo)} 件")
     note_line = "html をブラウザで開き、全選択コピー → note に貼り付け"
     post = cfg.get("note_post") or {}
     if post.get("enabled") and not dry_run:
         import note_publish
         try:
-            url, todo = note_publish.save_draft(doc["title"], body_html(doc), audio=audio_info,
+            url, todo = note_publish.save_draft(doc["title"], body_html(doc), audio=audio_info, cover=cover,
                                                 headless=post.get("headless", False))
             note_line = f"note に下書き保存しました（非公開）: {url}" + "".join(f"\n-# 未完了: {t}" for t in todo)
         except note_publish.NeedLogin as ex:
