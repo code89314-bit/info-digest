@@ -95,6 +95,10 @@ def record_use(pod: dict) -> None:
 
 # ---- NotebookLM ----
 def ensure_auth(pod: dict) -> None:
+    """使う直前に認証を取り直す。マスタートークン（`notebooklm login --master-token`）があれば
+    `auth refresh` でブラウザなしに新しい Cookie を発行できる。"""
+    if pod.get("refresh_before_use", True):
+        _cli(pod, ["auth", "refresh"], parse_json=False, check=False, timeout=300)
     if _cli(pod, ["list", "--json"], check=False) is not None:
         return
     refresh = pod.get("auth_refresh") or []
@@ -104,7 +108,8 @@ def ensure_auth(pod: dict) -> None:
                        capture_output=True, timeout=600)
         if _cli(pod, ["list", "--json"], check=False) is not None:
             return
-    raise PodcastError("NotebookLM の認証が切れています（このPCで `notebooklm login` を1回実行してください）")
+    raise PodcastError("NotebookLM の認証が切れています（このPCで `notebooklm login --master-token --account <メール>` "
+                       "を1回実行してください）")
 
 
 def _id(data, *keys) -> str | None:

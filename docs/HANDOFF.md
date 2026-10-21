@@ -114,6 +114,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
   - 既知の限界: Strata の Q2_0 量子化モデルは、要約に中国語の字体や英語が混ざることがある。
   - **2026-10-21 週単位・曜日テーマに変更**（`src/onco_news.py`、タスクは `-Module onco_news`）: 毎日 Strata が選別・分類して `state/onco_archive.json` にためる（投稿なし。安全性情報で score≥4 だけ即日テキスト）。`onco.schedule` で 月 新薬 / 火 治療ストラテジー / 水 ガイドライン / 木 治験 / 金 安全性・行政 / 土 週間まとめ / 日 休み。その曜日は直近7日のアーカイブを NotebookLM に読ませて、トピック抽出まとめ＋要約＋podcast。テーマの記事が `episode.min_items` 未満の週は作らない。国内ソースに薬事日報・AnswersNews・QLifePro を追加（国内RSSはがん関連が少なく、国内の拡充は②学習番組のクロールと合わせて行う）。
   - ②**学習番組** 実装済み（`src/learn.py`、`config.yaml` の `learn`、タスク「info-digest learn」毎日 6:30）。Strata が categories×seeds から学習テーマ（title / core / research）を作って `state/learn.json` に蓄え、毎日1つ選んで NotebookLM のウェブ調査（`source add-research --mode fast --import-all`）で一次資料を集め、要点を投稿＋podcast。PMDA 検索・DuckDuckGo・Bing のスクレイピングは使えなかったので、資料探しは NotebookLM に任せた。`ai_digest.ja_fix()` で Strata 出力の簡体字を日本語に置換。
+  - **NotebookLM の認証**: notebooklm-py を 0.8.5 に更新（NotebookLM が notebook.google.com に移り 0.3.4 は動かない）。ブラウザログインの Cookie は数時間で切れるため、`notebooklm login --master-token --account <email>` で長期のマスタートークンを作成済み（`~/.notebooklm/profiles/default/master_token.json`、パスワード相当の機密）。`podcast_nlm.ensure_auth()` は使う直前に毎回 `notebooklm auth refresh` で Cookie を発行し直す。Chrome の Cookie 読み取り（`--browser-cookies chrome`）は app-bound 暗号化のため管理者権限が必要で不採用。
   - （当初の計画メモ）②**学習番組**。Strata が公開情報（PMDA の RMP・適正使用ガイド資材、国内学会の治療ガイドライン、治療の変遷）を巡回してテーマ候補を作り、毎日ランダムに1つ選んで「情報の核」と一次資料（論文・メーカー資料・ガイドライン）のリンクを集め、NotebookLM で掘り下げ podcast を作る。扱ったテーマは記録して繰り返さない。音声はニュース1＋学習1で1日2本（上限3本）。PMDA の RMP 一覧は JS 描画で単純取得できないので要調査。
 
 ## 4. 将来の拡張案（ユーザーと相談済み・未着手）
