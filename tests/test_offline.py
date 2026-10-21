@@ -563,6 +563,8 @@ md = r["md"].read_text(encoding="utf-8")
 assert r["md"].name == "2026-W43.md" and md.startswith("# 【週刊がん薬物療法】10/18〜10/24｜新薬X、GL改訂 ほか")
 assert md.index("## 新薬・承認") < md.index("## ガイドライン") and "これまで" not in md   # 「記載なし」の行は出さない
 assert "[S](https://ex.com/1)" in md                                  # 出典・URLが空なら記事のものを使う
+assert md.index("この記事について") < md.index("今週（10/18〜10/24）") and "実験の場" in md   # 冒頭の注意書き
+assert "<blockquote>" in r["html"].read_text(encoding="utf-8")
 assert "#新薬X" in md and "##新薬X" not in md and "AIは書かない" not in md
 memo = "\n".join(r["memo"])
 assert "「海外」の表記がありません" in memo and "【海外】がありません" in memo

@@ -225,7 +225,9 @@ def build(style: dict, lead: dict, topics: list[dict], start: dt.date, end: dt.d
     links = section(style, "links")
     after = section(style, "afterword")
     pod = style.get("podcast") or {}
-    return {"audio": audio, "audio_heading": pod.get("heading") or "音声版",
+    opening = style.get("opening_notice") or {}
+    return {"opening_heading": opening.get("heading") or "", "opening": (opening.get("body") or "").strip(),
+            "audio": audio, "audio_heading": pod.get("heading") or "音声版",
             "audio_body": (pod.get("body") or "").strip(),"title": title_of(style, lead, start, end), "greeting": greeting(style, start, end),
             "three_lines": lead["three_lines"], "topics": topics,
             "links_heading": links.get("heading") or "一次資料リンク（まとめ）",
@@ -245,7 +247,10 @@ def themes_in(doc: dict) -> list[tuple[str, list[dict]]]:
 
 
 def to_markdown(doc: dict, memo: list[str]) -> str:
-    md = [f"# {doc['title']}", "", doc["greeting"], "", "**今週の3行**", ""]
+    md = [f"# {doc['title']}", ""]
+    if doc["opening"]:
+        md += [f"> **{doc['opening_heading']}**  "] + [f"> {x}  " for x in doc["opening"].splitlines()] + [""]
+    md += [doc["greeting"], "", "**今週の3行**", ""]
     md += [f"- {x}" for x in doc["three_lines"]]
     md += ["", "※ここに note の目次を挿入", ""]
     for theme, ts in themes_in(doc):
@@ -275,6 +280,8 @@ def to_html(doc: dict, memo: list[str]) -> str:
     """note に貼る用の簡素なHTML（ブラウザで開いて全選択コピー → note に貼り付け）。大見出し=h2、小見出し=h3。"""
     e = html.escape
     b = [f"<p><small>タイトル（note のタイトル欄へ）</small><br><strong>{e(doc['title'])}</strong></p><hr>",
+         (f"<blockquote><p><strong>{e(doc['opening_heading'])}</strong><br>"
+          + "<br>".join(e(x) for x in doc["opening"].splitlines()) + "</p></blockquote>" if doc["opening"] else ""),
          f"<p>{e(doc['greeting'])}</p>", "<p><strong>今週の3行</strong></p>",
          "<ul>" + "".join(f"<li>{e(x)}</li>" for x in doc["three_lines"]) + "</ul>",
          "<p>※ここに note の目次を挿入</p>"]
