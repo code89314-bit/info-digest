@@ -409,3 +409,10 @@ note_weekly:
   # NotebookLM の設定（CLI の場所・認証・音声の台帳は onco.podcast と共通。ここに書いた項目だけ上書き）
   notebook:
     max_url_sources: 30
+  # note への自動の「下書き保存」（非公開。公開は手で行う）。src/note_publish.py が note 専用のブラウザを操作する
+  # 最初に1回だけ: .venv\Scripts\python.exe src\note_publish.py --login で開いたブラウザから note にログイン
+  note_post:
+    enabled: true
+    # false: ブラウザの画面を出して操作する（土曜の実行時に数十秒だけ画面が出る）。
+    # true（画面なし）は note のエディタの読み込みが終わらず失敗する（2026-10-21 確認）
+    headless: false

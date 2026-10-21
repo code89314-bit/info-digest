@@ -276,11 +276,10 @@ def to_markdown(doc: dict, memo: list[str]) -> str:
     return "\n".join(md).rstrip() + "\n"
 
 
-def to_html(doc: dict, memo: list[str]) -> str:
-    """note に貼る用の簡素なHTML（ブラウザで開いて全選択コピー → note に貼り付け）。大見出し=h2、小見出し=h3。"""
+def body_html(doc: dict) -> str:
+    """note の本文（タイトル・確認メモを除く）。大見出し=h2、小見出し=h3。note への自動の下書き保存でもこれを貼る。"""
     e = html.escape
-    b = [f"<p><small>タイトル（note のタイトル欄へ）</small><br><strong>{e(doc['title'])}</strong></p><hr>",
-         (f"<blockquote><p><strong>{e(doc['opening_heading'])}</strong><br>"
+    b = [(f"<blockquote><p><strong>{e(doc['opening_heading'])}</strong><br>"
           + "<br>".join(e(x) for x in doc["opening"].splitlines()) + "</p></blockquote>" if doc["opening"] else ""),
          f"<p>{e(doc['greeting'])}</p>", "<p><strong>今週の3行</strong></p>",
          "<ul>" + "".join(f"<li>{e(x)}</li>" for x in doc["three_lines"]) + "</ul>",
@@ -306,6 +305,14 @@ def to_html(doc: dict, memo: list[str]) -> str:
               f"<p>※ここに音声ファイル「{e(doc['audio'])}」を埋め込み（note の「＋」→ 音声）</p>"]
     b += ["<p>" + "<br>".join(e(x) for x in doc["footer"].splitlines()) + "</p>",
           "<p>" + " ".join(e(f"#{h}") for h in doc["hashtags"]) + "</p>"]
+    return "\n".join(x for x in b if x)
+
+
+def to_html(doc: dict, memo: list[str]) -> str:
+    """確認用・手で貼る用のHTML（ブラウザで開いて全選択コピー → note に貼り付け）。"""
+    e = html.escape
+    b = [f"<p><small>タイトル（note のタイトル欄へ）</small><br><strong>{e(doc['title'])}</strong></p><hr>",
+         body_html(doc)]
     if memo:
         b += ['<hr><div style="background:#fff3cd;padding:8px"><p><strong>確認メモ（公開前に削除）</strong></p><ul>'
               + "".join(f"<li>{e(m)}</li>" for m in memo) + "</ul></div>"]
@@ -455,9 +462,24 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
     md_path, html_path = out_dir / f"{y}-W{w:02d}.md", out_dir / f"{y}-W{w:02d}.html"
     md_path.write_text(to_markdown(doc, memo), encoding="utf-8")
     html_path.write_text(to_html(doc, memo), encoding="utf-8")
+    json_path = out_dir / f"{y}-W{w:02d}.json"   # note への下書き保存（やり直しは note_publish.py --draft）に使う
+    json_path.write_text(json.dumps({"title": doc["title"], "body_html": body_html(doc)}, ensure_ascii=False),
+                         encoding="utf-8")
     print(f"下書きを保存しました: {md_path}\n                    {html_path}\nトピック {len(topics)} 件・確認メモ {len(memo)} 件")
+    note_line = "html をブラウザで開き、全選択コピー → note に貼り付け"
+    post = cfg.get("note_post") or {}
+    if post.get("enabled") and not dry_run:
+        import note_publish
+        try:
+            url = note_publish.save_draft(doc["title"], body_html(doc), headless=post.get("headless", False))
+            note_line = f"note に下書き保存しました（非公開）: {url}"
+        except note_publish.NeedLogin as ex:
+            note_line = f"note に下書き保存できませんでした: {ex}"
+        except Exception as ex:   # noqa: BLE001  下書き保存は「おまけ」。通知とファイルは送る
+            note_line = f"note に下書き保存できませんでした（手で貼ってください）: {str(ex)[:300]}"
+        print(note_line)
     content = (f"📝 **note 下書き：{doc['title']}**\n**今週の3行**\n" + "\n".join(f"- {x}" for x in doc["three_lines"])
-               + f"\n-# トピック {len(topics)}件・確認メモ {len(memo)}件。html をブラウザで開き、全選択コピー → note に貼り付け"
+               + f"\n{note_line}\n-# トピック {len(topics)}件・確認メモ {len(memo)}件（確認メモは添付の md・html の末尾）"
                + (f"\n-# 音声: {audio}（note の音声埋め込みで貼る）" if audio else
                   "\n-# 今週の podcast は見つかりませんでした（音声の節は省きました）"))
     if dry_run:
