@@ -122,7 +122,8 @@ def episode(cfg: dict, topic: dict, webhook: str, title: str) -> None:
     nb = podcast_nlm.Notebook(pod, [])
     try:
         n = nb.research(f"{topic['research']}\n（テーマ: {topic['title']}。日本の一次資料を優先）",
-                        mode=cfg.get("research_mode", "fast"))
+                        mode=cfg.get("research_mode", "fast"),
+                        fallback=f"{topic['title'].split('｜')[-1]} 添付文書 ガイドライン PMDA")
         if n < int(cfg.get("min_sources", 2)):
             raise podcast_nlm.PodcastError(f"一次資料が {n} 件しか見つかりませんでした")
         nb.add_text("学習テーマと核心", f"# {topic['title']}\n\n## 掘り下げる核心\n{topic['core']}\n")

@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from common import ROOT, post_discord, post_discord_file
@@ -155,18 +156,43 @@ class Notebook:
         if picked:
             self._add_items(picked, title)
 
-    def research(self, query: str, mode: str = "fast", timeout: int = 1800) -> int:
-        """NotebookLM のウェブ調査で資料を探して全部取り込む。取り込めた資料の数を返す。"""
-        with tempfile.TemporaryDirectory() as tmp:
-            q = Path(tmp) / "research.txt"
-            q.write_text(query, encoding="utf-8")
-            _cli(self.pod, ["source", "add-research", "--prompt-file", str(q), "-n", self.nb, "--mode", mode,
-                            "--import-all", "--timeout", str(timeout), "--json"], timeout=timeout * 2 + 120)
-        _cli(self.pod, ["source", "clean", "-n", self.nb, "-y"], parse_json=False, check=False)   # 重複・取込失敗を除く
-        srcs = (_cli(self.pod, ["source", "list", "-n", self.nb, "--json"], check=False) or {})
-        n = len(srcs.get("sources", [])) if isinstance(srcs, dict) else 0
+    def research(self, query: str, mode: str = "fast", timeout: int = 1800, fallback: str | None = None,
+                 retries: int = 1, wait: float = 60) -> int:
+        """NotebookLM のウェブ調査で資料を探して全部取り込む。取り込めた資料の数を返す。
+
+        取り込み（IMPORT_RESEARCH）は Google 側の一時的なサーバーエラーで落ちることがあるので、間をおいてやり直す。
+        それでも駄目なら、fallback の検索語でウェブ検索（discover）し、候補を1件ずつ資料に足す。
+        """
+        err = None
+        for attempt in range(retries + 1):
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    q = Path(tmp) / "research.txt"
+                    q.write_text(query, encoding="utf-8")
+                    _cli(self.pod, ["source", "add-research", "--prompt-file", str(q), "-n", self.nb, "--mode", mode,
+                                    "--import-all", "--timeout", str(timeout), "--json"], timeout=timeout * 2 + 120)
+                err = None
+                break
+            except (PodcastError, subprocess.TimeoutExpired) as ex:
+                err = ex
+                print(f"ウェブ調査の取り込みに失敗（{attempt + 1}回目）: {str(ex)[:200]}")
+                if attempt < retries:
+                    time.sleep(wait)
+        n = self._clean_and_count()
+        if err and n < 2 and fallback:
+            urls = [c["url"] for c in self.discover(fallback)][:8]
+            loaded = self.add_urls(urls) if urls else []
+            print(f"ウェブ検索で代わりに資料を足しました: {len(loaded)}/{len(urls)} 件")
+            n = self._clean_and_count()
+        if err and n == 0:
+            raise err if isinstance(err, PodcastError) else PodcastError(f"ウェブ調査がタイムアウト: {err}")
         print(f"NotebookLM ウェブ調査: 資料 {n} 件")
         return n
+
+    def _clean_and_count(self) -> int:
+        _cli(self.pod, ["source", "clean", "-n", self.nb, "-y"], parse_json=False, check=False)   # 重複・取込失敗を除く
+        srcs = (_cli(self.pod, ["source", "list", "-n", self.nb, "--json"], check=False) or {})
+        return len(srcs.get("sources", [])) if isinstance(srcs, dict) else 0
 
     def add_text(self, title: str, text: str) -> None:
         with tempfile.TemporaryDirectory() as tmp:
