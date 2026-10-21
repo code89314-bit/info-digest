@@ -6,7 +6,8 @@
 設定は config.yaml の <区画>.podcast。音声生成の1日上限は、E:\\onco_tekisei の適正使用ガイド用と
 同じ台帳（audio_usage.json）で合算して守る（Google 側のアカウント単位の制限を超えないため）。
 
-流れ: 認証確認 → ノート作成 → 資料（動向まとめ＋記事一覧のテキスト、記事URL）追加 → 音声生成 →
+流れ: 認証確認 → ノート作成 → 資料（記事URL＋原題・原文冒頭の一覧）追加 →
+（podcast.summarize: true なら ai_digest が ask で見出し・要約・動向まとめを書かせて投稿）→ 音声生成 →
 完成待ち → mp3 ダウンロード → ノート削除 → 圧縮 → Discord に添付。
 失敗したら理由を1行だけ Discord に投稿する（ダイジェスト本体の投稿には影響しない）。
 """
@@ -117,63 +118,79 @@ def _id(data, *keys) -> str | None:
     return None
 
 
-def source_text(picked: list[dict], overview: str | None, title: str) -> str:
-    lines = [f"# {title}", ""]
-    if overview:
-        lines += ["## 今日の動向まとめ", "", overview, ""]
-    lines += ["## 新着情報の一覧", ""]
+def source_text(picked: list[dict], title: str) -> str:
+    """記事URLが読めなかったときの補助資料: 原題と原文の冒頭（LLMが書いた日本語は入れない）。"""
+    lines = [f"# {title}：新着情報の一覧（原文）", ""]
     for p in picked:
-        lines += [f"### {p['title_ja']}", f"- 分類: {p['tag']}", f"- 出典: {p['source']}", f"- URL: {p['link']}",
-                  f"- 要約: {p['summary_ja']}", f"- 原題: {p['title']}", f"- 原文の冒頭: {p['summary'][:400]}", ""]
+        lines += [f"## {p['title']}", f"- 出典: {p['source']}", f"- URL: {p['link']}",
+                  f"- 原文の冒頭: {p['summary'][:600]}", ""]
     return "\n".join(lines)
 
 
-def make_podcast(picked: list[dict], overview: str | None, pod: dict, out_path: Path) -> None:
-    ensure_auth(pod)
-    title = f"{pod.get('title') or 'ニュース'} {dt.date.today():%Y-%m-%d}"
-    nb = _id(_cli(pod, ["create", title, "--json"]), "notebook", "id")
-    if not nb:
-        raise PodcastError("ノートを作れませんでした")
-    ok = False
-    try:
-        src_ids = []
-        with tempfile.TemporaryDirectory() as tmp:
-            md = Path(tmp) / "digest.md"
-            md.write_text(source_text(picked, overview, title), encoding="utf-8")
-            sid = _id(_cli(pod, ["source", "add", str(md), "-n", nb, "--title", title, "--json"]),
-                      "source", "source_id", "id")
-            if not sid:
-                raise PodcastError("まとめテキストを資料に追加できませんでした")
-            src_ids.append(sid)
-        for p in picked[: int(pod.get("max_url_sources", 8))]:   # 記事本文も読ませる（取れないURLは飛ばす）
-            sid = _id(_cli(pod, ["source", "add", p["link"], "-n", nb, "--json"], check=False),
+CITE = re.compile(r"\s*\[\d+(?:\s*[,，、-]\s*\d+)*\]")
+
+
+def strip_citations(text: str) -> str:
+    """NotebookLM の回答に付く [1] [2-3] などの引用番号を取り除く。"""
+    return CITE.sub("", text or "")
+
+
+class Notebook:
+    """その日のニュース用のノート1冊。記事を読ませて、要約の質問にも音声づくりにも使う。"""
+
+    def __init__(self, pod: dict, picked: list[dict]):
+        self.pod, self.picked, self.nb, self.loaded = pod, picked, None, set()
+        ensure_auth(pod)
+        title = f"{pod.get('title') or 'ニュース'} {dt.date.today():%Y-%m-%d}"
+        self.nb = _id(_cli(pod, ["create", title, "--json"]), "notebook", "id")
+        if not self.nb:
+            raise PodcastError("ノートを作れませんでした")
+        srcs = {}
+        for i, p in enumerate(picked[: int(pod.get("max_url_sources", 12))]):   # 記事本文を読ませる
+            sid = _id(_cli(pod, ["source", "add", p["link"], "-n", self.nb, "--json"], check=False),
                       "source", "source_id", "id")
             if sid:
-                src_ids.append(sid)
-        for sid in src_ids:
-            _cli(pod, ["source", "wait", sid, "-n", nb, "--timeout", str(SOURCE_WAIT)],
-                 parse_json=False, check=sid == src_ids[0], timeout=SOURCE_WAIT + 60)
+                srcs[sid] = i
+        with tempfile.TemporaryDirectory() as tmp:   # 本文が取れない記事のための補助資料
+            md = Path(tmp) / "originals.md"
+            md.write_text(source_text(picked, title), encoding="utf-8")
+            _cli(pod, ["source", "add", str(md), "-n", self.nb, "--title", f"{title}（原文の一覧）", "--json"],
+                 check=False)
+        for sid, i in srcs.items():
+            if _cli(pod, ["source", "wait", sid, "-n", self.nb, "--timeout", str(SOURCE_WAIT)],
+                    parse_json=False, check=False, timeout=SOURCE_WAIT + 60) is not None:
+                self.loaded.add(i)
+        print(f"NotebookLM: 記事 {len(self.loaded)}/{len(picked)} 件の本文を読み込みました")
 
-        _cli(pod, ["generate", "audio", (pod.get("instructions") or "").strip(), "-n", nb,
+    def ask(self, question: str) -> str:
+        with tempfile.TemporaryDirectory() as tmp:   # 長い質問はファイルで渡す（コマンドラインの長さ・文字化け対策）
+            q = Path(tmp) / "q.txt"
+            q.write_text(question, encoding="utf-8")
+            data = _cli(self.pod, ["ask", "--prompt-file", str(q), "-n", self.nb, "--json"], timeout=600)
+        answer = data.get("answer", "") if isinstance(data, dict) else str(data or "")
+        return strip_citations(answer).strip()
+
+    def audio(self, out_path: Path) -> None:
+        pod = self.pod
+        _cli(pod, ["generate", "audio", (pod.get("instructions") or "").strip(), "-n", self.nb,
                    "--format", pod.get("format", "deep-dive"), "--length", pod.get("length", "default"),
                    "--language", pod.get("language", "ja"), "--retry", "2", "--json"], timeout=600)
         record_use(pod)   # Google が受け付けた時点で1件消費
-        arts = (_cli(pod, ["artifact", "list", "-n", nb, "--json"]) or {}).get("artifacts", [])
+        arts = (_cli(pod, ["artifact", "list", "-n", self.nb, "--json"]) or {}).get("artifacts", [])
         audio = [a for a in arts if "audio" in str(a.get("type", "")).lower()]
         if not audio:
             raise PodcastError("音声が生成されませんでした")
         art = audio[-1]["id"]
-        _cli(pod, ["artifact", "wait", art, "-n", nb, "--timeout", str(ARTIFACT_WAIT)],
+        _cli(pod, ["artifact", "wait", art, "-n", self.nb, "--timeout", str(ARTIFACT_WAIT)],
              parse_json=False, timeout=ARTIFACT_WAIT + 120)
-        _cli(pod, ["download", "audio", str(out_path), "-a", art, "-n", nb], parse_json=False, timeout=900)
+        _cli(pod, ["download", "audio", str(out_path), "-a", art, "-n", self.nb], parse_json=False, timeout=900)
         if not out_path.exists():
             raise PodcastError("mp3 をダウンロードできませんでした")
-        ok = True
-    finally:
-        if ok or not pod.get("keep_notebook_on_error", True):
-            _cli(pod, ["delete", "-n", nb, "-y"], parse_json=False, check=False)
-        else:
-            print(f"エラーのためノートを残しました（調査後に `notebooklm delete -n {nb} -y`）")
+
+    def close(self) -> None:
+        if self.nb:
+            _cli(self.pod, ["delete", "-n", self.nb, "-y"], parse_json=False, check=False)
+            self.nb = None
 
 
 # ---- 圧縮（Discord の添付上限に収める） ----
@@ -203,8 +220,19 @@ def compress(src: Path, dst: Path, max_mb: float, ffmpeg: str) -> float:
     return secs
 
 
-def run(picked: list[dict], overview: str | None, pod: dict, *, webhook: str, username: str) -> None:
-    """podcast を作って添付する。どこで失敗してもダイジェスト本体には影響させない。"""
+def run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None = None) -> None:
+    """podcast を作って添付する。notebook を渡せば要約に使ったノートをそのまま使う（最後に削除）。
+
+    どこで失敗してもダイジェスト本体には影響させない。
+    """
+    try:
+        _run(picked, pod, webhook=webhook, username=username, notebook=notebook)
+    finally:
+        if notebook:
+            notebook.close()
+
+
+def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None) -> None:
     if os.environ.get("DRY_RUN") == "1":
         print(f"---- DRY_RUN (podcast) ---- {len(picked)}件から NotebookLM で音声を作る予定（実行はしない）")
         return
@@ -221,7 +249,14 @@ def run(picked: list[dict], overview: str | None, pod: dict, *, webhook: str, us
     ffmpeg = pod.get("ffmpeg") or shutil.which("ffmpeg") or "ffmpeg"
     try:
         print("podcast を作成中（NotebookLM、15〜20分かかることがあります）…")
-        make_podcast(picked, overview, pod, raw)
+        if notebook is None:
+            notebook = Notebook(pod, picked)
+            try:
+                notebook.audio(raw)
+            finally:
+                notebook.close()
+        else:
+            notebook.audio(raw)
         secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
         post_discord_file(webhook, small, username=username,
                           content=f"🎧 **今日のニュース podcast**（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")

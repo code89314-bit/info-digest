@@ -210,6 +210,9 @@ onco:
     enabled: true
     # 選ばれた記事がこの件数より少ない日は作らない
     min_items: 2
+    # true: 記事の選別だけ Strata、見出し・要約・動向まとめは記事本文を読んだ NotebookLM が書く（日本語が自然で、
+    #       資料に基づいて書く）。NotebookLM が使えないときは Strata の要約で投稿。false: 全部 Strata
+    summarize: true
     # NotebookLM のノート名
     title: がん薬物療法ニュース
     # 番組への指示（NotebookLM に渡す）
@@ -222,8 +225,8 @@ onco:
     format: deep-dive      # deep-dive / brief / critique / debate
     length: default        # short / default / long（長いと Discord の10MBに収まらないことがある）
     language: ja
-    # 記事のURLも資料として読ませる件数（本文まで読んだ解説になる。取れないURLは飛ばす）
-    max_url_sources: 8
+    # 記事のURLを資料として読ませる件数（本文まで読んだ要約・解説になる。取れないURLは飛ばす）
+    max_url_sources: 12
     # Discord の添付上限（ブースト無しのサーバーは10MB）
     max_mb: 9.5
     file_prefix: onco

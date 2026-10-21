@@ -108,6 +108,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 追加: **がん薬物療法** `onco`（`config.yaml` の別区画、`DISCORD_WEBHOOK_ONCO`）。国内（PMDA 承認審査・安全対策、厚労省 報道発表、Minds）＋海外（ESMO・NCI・OncLive・Targeted Oncology・CancerNetwork。FDA公式はこのPCから403/404のため報道で代替）。
   - 投稿の先頭に LLM が書く「📋 今日の動向まとめ」（`overview`、がん種別）。冒頭に注意書き（`notice`）。
   - `llm.dedupe: true` で、出典違いの同じ出来事を最後にLLMで1件にまとめる（全区画共通）。
+  - `podcast.summarize: true`: 選別だけ Strata。選んだ記事のURLを NotebookLM に読ませ、見出し・要約（`ask` 1回＋途中で切れた分の聞き直し1回）と動向まとめ（`ask` 1回）を NotebookLM が書く。同じノートで音声も作る。NotebookLM が使えなければ Strata の要約で投稿。
   - **podcast**（`src/podcast_nlm.py`）: NotebookLM（`E:\onco_tekisei` と同じ notebooklm-py・認証・1日上限台帳 `audio_usage.json`）で音声概要を作り、ffmpeg で10MB以下に圧縮して Discord に添付。失敗時は理由を1行投稿。
   - タスク「info-digest onco」毎日 7:50（NotebookLM の認証延命 7:30 の後）。
   - 既知の限界: Strata の Q2_0 量子化モデルは、要約に中国語の字体や英語が混ざることがある。

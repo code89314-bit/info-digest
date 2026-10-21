@@ -311,14 +311,46 @@ def onco_post(url, headers=None, json=None, timeout=None):
 ai_digest.requests.post = onco_post
 PODS = []
 sys.modules["podcast_nlm"] = type(sys)("podcast_nlm")
-sys.modules["podcast_nlm"].run = lambda picked, overview, pod, **k: PODS.append((len(picked), overview, k["webhook"]))
+sys.modules["podcast_nlm"].run = lambda picked, pod, **k: PODS.append((len(picked), k["webhook"], k["notebook"]))
 ai_digest.main("onco")
 env, k = POSTED[0]
 assert env == "DISCORD_WEBHOOK_ONCO" and k["content"].startswith("💊 **がん**") and "原文で確認" in k["content"]
 assert k["embeds"][0]["title"] == "📋 今日の動向まとめ" and "新薬X" in k["embeds"][0]["description"]
 assert "承認・ガイドライン改訂" in PROMPTS[0]["messages"][0]["content"] and "150字以内" in PROMPTS[0]["messages"][0]["content"]
 assert "response_format" not in PROMPTS[1] and "海外と日本を区別" in PROMPTS[1]["messages"][0]["content"]
-assert PODS == [(1, "**肺がん**\n- 新薬Xが承認（海外）", "DISCORD_WEBHOOK_ONCO")], PODS
+assert PODS == [(1, "DISCORD_WEBHOOK_ONCO", None)], PODS
+
+
+# podcast.summarize: 要約と動向まとめは NotebookLM（ノートに ask）が書き、同じノートで音声を作る
+class FakeNotebook:
+    def __init__(self, pod, picked):
+        self.asked, self.closed = [], False
+
+    def ask(self, q):
+        self.asked.append(q)
+        if len(self.asked) == 1:
+            return '{"items": [{"i": 0, "title_ja": "NLMの見出し", "summary_ja": "NLMの要約"}, {"i": 5, "title_ja": "x"}]}'
+        return "**肺がん**\n- NLMのまとめ"
+
+    def close(self):
+        self.closed = True
+
+
+NBS = []
+sys.modules["podcast_nlm"].Notebook = lambda pod, picked: NBS.append(FakeNotebook(pod, picked)) or NBS[-1]
+OCFG["onco"]["podcast"]["summarize"] = True
+common.save_state("onco", {})
+POSTED.clear()
+PODS.clear()
+os.environ.pop("DRY_RUN")
+ai_digest.main("onco")
+os.environ["DRY_RUN"] = "1"
+k = POSTED[0][1]
+assert "NLMのまとめ" in k["embeds"][0]["description"] and "NLMの見出し" in k["embeds"][1]["description"]
+assert "NLMの要約" in k["embeds"][1]["description"]
+assert "https://ex.com/a" in NBS[0].asked[0] and "海外と日本を区別" in NBS[0].asked[1]
+assert PODS[0][2] is NBS[0] and len(PROMPTS) == 3   # Strata は選別だけ（動向まとめは書かない）
+OCFG["onco"]["podcast"]["summarize"] = False
 del sys.modules["podcast_nlm"]
 print("✅ onco digest")
 
@@ -334,8 +366,9 @@ podcast_nlm.record_use(pod)
 podcast_nlm.record_use(pod)
 assert podcast_nlm.used_today(pod) == 2
 txt = podcast_nlm.source_text([{"title_ja": "新薬X", "tag": "新薬・承認", "source": "PMDA", "link": "https://ex.com/x",
-                                 "summary_ja": "要約", "title": "X approved", "summary": "body"}], "まとめ", "がん 2026")
-assert "## 今日の動向まとめ" in txt and "https://ex.com/x" in txt and "X approved" in txt
+                                 "summary_ja": "要約", "title": "X approved", "summary": "body"}], "がん 2026")
+assert "https://ex.com/x" in txt and "X approved" in txt and "新薬X" not in txt   # LLMの日本語は入れない
+assert podcast_nlm.strip_citations("承認された [1]。適応は肺がん [2, 3]、[4-6]。") == "承認された。適応は肺がん、。"
 assert podcast_nlm._id({"notebook": {"id": "nb1"}}, "notebook", "id") == "nb1"
 assert podcast_nlm._id({"source_id": "s1"}, "source", "source_id", "id") == "s1"
 print("✅ podcast parts")
@@ -362,6 +395,41 @@ ai_digest.requests.post = lambda *a, **k: FakeChat(chat_reply([{"i": 0, "title_j
                                                                {"i": 1, "title_ja": "b", "summary_ja": "s"}]))
 assert len(ai_digest.select_with_llm(CANDS, DCFG)) == 2   # 重複チェックが解釈できなければそのまま
 print("✅ llm dedupe")
+
+# ---------- Discord: 1メッセージの embed 合計6000字・10個までに分ける ----------
+SENT_PAYLOADS = []
+common._send = lambda url, p: SENT_PAYLOADS.append(p)
+os.environ.pop("DRY_RUN")
+os.environ["DISCORD_TEST"] = "https://example.invalid/hook"
+big = [{"title": f"t{n}", "description": "あ" * 2500} for n in range(5)] + [{"title": "s", "description": "x"}] * 12
+common.post_discord("DISCORD_TEST", content="見出し", embeds=big)
+os.environ["DRY_RUN"] = "1"
+assert all(len(p["embeds"]) <= 10 for p in SENT_PAYLOADS)
+assert all(sum(len(e["title"]) + len(e["description"]) for e in p["embeds"]) <= 5800 for p in SENT_PAYLOADS)
+assert sum(len(p["embeds"]) for p in SENT_PAYLOADS) == 17 and SENT_PAYLOADS[0]["content"] == "見出し"
+print("✅ discord embed chunks")
+
+# ---------- NotebookLM の回答が途中で切れても読める分を使い、残りだけ聞き直す ----------
+cut = '{"items": [{"i": 0, "title_ja": "見0", "summary_ja": "要0"}, {"i": 1, "title_ja": "見1", "summary_ja": "要1"}, {"i": 2, "titl'
+assert [g["i"] for g in ai_digest.parse_item_objects(cut)] == [0, 1]
+
+
+class CutNotebook:
+    def __init__(self):
+        self.asked = []
+
+    def ask(self, q):
+        self.asked.append(q)
+        return cut if len(self.asked) == 1 else '{"items": [{"i": 2, "title_ja": "見2", "summary_ja": "要2"}]}'
+
+
+cn = CutNotebook()
+three = [{"title": f"T{n}", "link": f"https://ex.com/{n}", "source": "S", "tag": "その他", "title_ja": "s", "summary_ja": "s"}
+         for n in range(3)]
+res, _ = ai_digest.summarize_with_notebooklm(cn, three, {"overview": {"enabled": False}})
+assert [r["title_ja"] for r in res] == ["見0", "見1", "見2"]
+assert "[0] T0" in cn.asked[0] and "[0] T0" not in cn.asked[1] and "[2] T2" in cn.asked[1]   # 2回目は残りだけ
+print("✅ notebooklm partial answer")
 
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)

@@ -42,6 +42,7 @@ if ($base) {
 }
 
 $env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUNBUFFERED = '1'    # write progress to the log as it happens (not all at the end)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8    # read python's UTF-8 output as UTF-8 (not the ANSI code page)
 & $python src\ai_digest.py $Section 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
 Log "exit code $LASTEXITCODE"

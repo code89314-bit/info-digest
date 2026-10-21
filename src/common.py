@@ -95,7 +95,18 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
         if "description" in e and len(e["description"]) > 4000:
             e["description"] = e["description"][:3990] + "…"
 
-    chunks = [embeds[i:i + 10] for i in range(0, len(embeds), 10)] or [[]]
+    # 1メッセージに embed は10個まで、かつ全embedの文字数合計は6000字まで（超えると 400/413）
+    chunks, cur, size = [], [], 0
+    for e in embeds:
+        n = len(e.get("title", "")) + len(e.get("description", ""))
+        if cur and (len(cur) == 10 or size + n > 5800):
+            chunks.append(cur)
+            cur, size = [], 0
+        cur.append(e)
+        size += n
+    if cur:
+        chunks.append(cur)
+    chunks = chunks or [[]]
     contents = _split_text(content, 1900) if content else [""]
 
     payloads = []

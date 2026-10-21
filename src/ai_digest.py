@@ -179,6 +179,20 @@ def parse_items(text: str) -> list | None:
     return items if isinstance(items, list) else None
 
 
+def parse_item_objects(text: str) -> list[dict]:
+    """{"items": [...]} が途中で切れていても、読める {"i": ..., ...} を1件ずつ取り出す。"""
+    items = parse_items(text)
+    if items is not None:
+        return [g for g in items if isinstance(g, dict)]
+    out = []
+    for m in re.finditer(r"\{[^{}]*\"i\"\s*:\s*\d+[^{}]*\}", strip_think(text)):
+        try:
+            out.append(json.loads(m.group(0)))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
 def chat_anthropic(prompt: str, llm: dict) -> str:
     key = os.environ.get("ANTHROPIC_API_KEY")   # llm.api_key_env はローカルLLM用
     if not key:
@@ -393,6 +407,68 @@ def write_overview(picked: list[dict], cfg: dict) -> str | None:
     return text[:3900] or None
 
 
+NLM_ITEMS_PROMPT = """資料として追加したニュース記事について、{audience}向けに日本語の見出しと要約を書いてください。
+
+- 各記事は、その記事の資料に書かれていることだけを根拠にする。書かれていない数値・用量・承認状況を補わない
+- title_ja: 内容が分かる簡潔な見出し（40字以内）
+- summary_ja: 何が新しく、なぜ重要かを1〜2文（{summary_len}字以内）
+- 英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・試験名は原語のままでよい）
+{extra}- 資料が読めず内容が分からない記事は出力しない
+
+記事（番号・原題・URL）:
+{items}
+
+JSONだけを出力（前後に説明文やコードブロックを付けない）:
+{{"items": [{{"i": 番号, "title_ja": "...", "summary_ja": "..."}}]}}"""
+
+
+def summarize_with_notebooklm(nb, picked: list[dict], cfg: dict) -> tuple[list[dict], str | None]:
+    """Strata が選んだ記事の見出し・要約と「動向まとめ」を、記事本文を読んだ NotebookLM に書かせる。
+
+    質問は2回だけ（NotebookLM のチャットにも1日の回数制限があるため）。書けなかった記事は Strata の要約のまま。
+    """
+    ov = cfg.get("overview") or {}
+    audience = ov.get("audience") or "この分野の専門家"
+    extra = "".join(f"- {r}\n" for r in (ov.get("rules") or []))
+    out = [dict(p) for p in picked]
+    done = set()
+    # 長い回答は途中で切れることがあるので、取り出せなかった記事だけをもう一度聞く（最大2回）
+    for attempt in range(2):
+        todo = [i for i in range(len(picked)) if i not in done]
+        if not todo:
+            break
+        lines = [f"[{i}] {picked[i]['title']} — {picked[i]['link']}" for i in todo]
+        try:
+            text = nb.ask(NLM_ITEMS_PROMPT.format(audience=audience, summary_len=cfg.get("summary_len", 120),
+                                                  extra=extra, items="\n".join(lines)))
+        except Exception as ex:   # noqa: BLE001
+            print("NotebookLM の要約に失敗（Strataの要約を使います）:", ex)
+            break
+        got = parse_item_objects(text)
+        if not got:
+            print("NotebookLM の回答を解釈できませんでした:", text[:300])
+        for g in got:
+            try:
+                i = int(g["i"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if i in todo and g.get("title_ja") and g.get("summary_ja"):
+                out[i].update(title_ja=str(g["title_ja"]), summary_ja=str(g["summary_ja"]))
+                done.add(i)
+    print(f"NotebookLM が要約した記事: {len(done)}/{len(picked)} 件")
+    overview = None
+    if ov.get("enabled"):
+        items = "\n".join(f"- [{p['tag']}] {p['title_ja']}：{p['summary_ja']}（{p['source']}）" for p in out)
+        try:
+            overview = nb.ask(OVERVIEW_PROMPT.format(
+                audience=audience, group_by=ov.get("group_by") or "テーマ", extra=extra,
+                max_chars=ov.get("max_chars", 1200), items=items)
+                + "\n\n資料（記事本文）の内容に基づいて書き、上の一覧と食い違う場合は資料を優先する。")[:3900] or None
+        except Exception as ex:   # noqa: BLE001
+            print("NotebookLM の動向まとめに失敗:", ex)
+    return out, overview
+
+
 def section_config(section: str) -> dict:
     """config.yaml の区画（ai_digest / ai_global など）。llm を書いていない区画は ai_digest の llm を使う。"""
     full = load_config()
@@ -418,7 +494,8 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
 
     items = collect(cfg, set(seen))
     print(f"候補 {len(items)} 件")
-    picked, overview = [], None
+    pod = cfg.get("podcast") or {}
+    picked, overview, notebook = [], None, None
     if items and not seed:
         llm = llm_settings(cfg)
         picked = select_with_llm(items, cfg)
@@ -430,25 +507,42 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
 
         if picked:
             jst = time.strftime("%m/%d %H:%M", time.gmtime(time.time() + 9 * 3600))
+            # podcast.summarize: 選んだ記事を NotebookLM に読ませ、要約・動向まとめもそちらに書かせる
+            if pod.get("enabled") and pod.get("summarize") and os.environ.get("DRY_RUN") != "1":
+                import podcast_nlm
+                try:
+                    notebook = podcast_nlm.Notebook(pod, picked)
+                    picked, overview = summarize_with_notebooklm(notebook, picked, cfg)
+                except Exception as ex:   # noqa: BLE001  NotebookLM が使えなければ Strata の要約で投稿
+                    print("NotebookLM を使えませんでした（Strataの要約で投稿します）:", ex)
+                    if notebook:
+                        notebook.close()
+                    notebook = None
             embeds = build_embeds(picked, get_tags(cfg))
             if (cfg.get("overview") or {}).get("enabled"):
-                overview = write_overview(picked, cfg)
+                overview = overview or write_overview(picked, cfg)
                 if overview:
                     embeds.insert(0, {"title": "📋 今日の動向まとめ", "description": overview, "color": 0x5C6BC0})
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
-            post_discord(webhook, username=title, content=content, embeds=embeds)
+            try:
+                post_discord(webhook, username=title, content=content, embeds=embeds)
+            except BaseException:
+                if notebook:   # 投稿に失敗したらノートを残さない（次回また作り直す）
+                    notebook.close()
+                raise
 
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
     save_state(section, state)   # 音声づくり（長い・失敗しうる）の前に既読を確定させる
     if seed:
         print(f"既読にしました: {len(items)} 件（投稿なし）")
 
-    pod = cfg.get("podcast") or {}
     if pod.get("enabled") and len(picked) >= int(pod.get("min_items", 1)):
         import podcast_nlm   # NotebookLM を使うときだけ読み込む
-        podcast_nlm.run(picked, overview, pod, webhook=webhook, username=title)
+        podcast_nlm.run(picked, pod, webhook=webhook, username=title, notebook=notebook)
+    elif notebook:
+        notebook.close()
 
 
 if __name__ == "__main__":
