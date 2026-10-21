@@ -476,6 +476,48 @@ onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "sun", "DISCO
 assert NPOST == []   # 火曜は0件で作らない、日曜は休み
 print("✅ onco_news")
 
+# ---------- learn：テーマ帳の補充・重みつき選択・扱ったテーマは繰り返さない ----------
+import random  # noqa: E402
+
+import learn  # noqa: E402
+
+LCFG2 = {"audience": "薬剤師", "min_pending": 3, "topics_per_seed": 2, "max_refill_calls": 3,
+         "categories": [{"name": "適正使用ガイド", "weight": 1, "seeds": ["薬A"]},
+                        {"name": "治療の変遷", "weight": 0, "seeds": ["がんB"]},
+                        {"name": "種なし", "weight": 5, "seeds": []}],
+         "llm": {"provider": "openai_compat", "model": "m", "base_url": "http://llm.local/v1"}}
+TOPIC_PROMPTS = []
+
+
+def topic_post(url, headers=None, json=None, timeout=None):
+    TOPIC_PROMPTS.append(json["messages"][0]["content"])
+    n = len(TOPIC_PROMPTS)
+    return FakeChat(chat_reply.__globals__["json"].dumps({"topics": [
+        {"title": f"テーマ{n}-1", "core": "核心", "research": "PMDAの適正使用ガイド"},
+        {"title": f"テーマ{n}-2", "core": "核心", "research": "添付文書"},
+        {"title": "researchなし"}]}, ensure_ascii=False))
+
+
+ai_digest.requests.post = topic_post
+st = {"catalog": [], "done": []}
+added = learn.refill(LCFG2, st, random.Random(1))
+assert added == 4 and len(TOPIC_PROMPTS) == 2, (added, TOPIC_PROMPTS)       # 2件ずつ×2回で min_pending を超える
+assert all("薬A" in p and "既にあるテーマ" in p for p in TOPIC_PROMPTS)       # 重み0・種なしのカテゴリは使わない
+assert "テーマ1-1" in TOPIC_PROMPTS[1]                                        # 2回目は既存テーマを避けるよう伝える
+st["done"] = [t["id"] for t in st["catalog"][:3]]
+assert learn.choose(LCFG2, st, random.Random(2))["title"] == st["catalog"][3]["title"]
+st["done"].append(st["catalog"][3]["id"])
+assert learn.choose(LCFG2, st, random.Random(2)) is None
+LPOST = []
+learn.post_discord = lambda env, **k: LPOST.append(k)
+learn.episode({"podcast": {"enabled": True}}, st["catalog"][0], "DISCORD_WEBHOOK_ONCO", "学習")   # DRY_RUN: 表示だけ
+assert LPOST == []
+print("✅ learn")
+
+assert ai_digest.ja_fix("转移性胰腺癌の随访と监测、推奨等级、患者分层") == "転移性膵癌のフォローアップとモニタリング、推奨等級、患者層別化"
+assert ai_digest.ja_fix("据え置き・複数の薬剤") == "据え置き・複数の薬剤"   # 日本語の字はそのまま
+print("✅ ja_fix")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

@@ -32,7 +32,8 @@ class PodcastError(Exception):
 
 
 def _env(pod: dict) -> dict:
-    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+    # NOTEBOOKLM_HEADLESS_REAUTH: Cookie が切れても、保存したブラウザのログインが生きていれば画面なしで取り直す
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", NOTEBOOKLM_HEADLESS_REAUTH="1")
     extra = os.path.expandvars(pod.get("cli_path_add") or "")
     if extra:
         env["PATH"] = env.get("PATH", "") + os.pathsep + extra
@@ -139,12 +140,37 @@ class Notebook:
     """その日のニュース用のノート1冊。記事を読ませて、要約の質問にも音声づくりにも使う。"""
 
     def __init__(self, pod: dict, picked: list[dict]):
+        """picked の記事URLを資料に入れたノートを作る。picked が空なら空のノート（research / add_text で足す）。"""
         self.pod, self.picked, self.nb, self.loaded = pod, picked, None, set()
         ensure_auth(pod)
         title = f"{pod.get('title') or 'ニュース'} {dt.date.today():%Y-%m-%d}"
         self.nb = _id(_cli(pod, ["create", title, "--json"]), "notebook", "id")
         if not self.nb:
             raise PodcastError("ノートを作れませんでした")
+        if picked:
+            self._add_items(picked, title)
+
+    def research(self, query: str, mode: str = "fast", timeout: int = 1800) -> int:
+        """NotebookLM のウェブ調査で資料を探して全部取り込む。取り込めた資料の数を返す。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            q = Path(tmp) / "research.txt"
+            q.write_text(query, encoding="utf-8")
+            _cli(self.pod, ["source", "add-research", "--prompt-file", str(q), "-n", self.nb, "--mode", mode,
+                            "--import-all", "--timeout", str(timeout), "--json"], timeout=timeout * 2 + 120)
+        _cli(self.pod, ["source", "clean", "-n", self.nb, "-y"], parse_json=False, check=False)   # 重複・取込失敗を除く
+        srcs = (_cli(self.pod, ["source", "list", "-n", self.nb, "--json"], check=False) or {})
+        n = len(srcs.get("sources", [])) if isinstance(srcs, dict) else 0
+        print(f"NotebookLM ウェブ調査: 資料 {n} 件")
+        return n
+
+    def add_text(self, title: str, text: str) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            md = Path(tmp) / "note.md"
+            md.write_text(text, encoding="utf-8")
+            _cli(self.pod, ["source", "add", str(md), "-n", self.nb, "--title", title, "--json"], check=False)
+
+    def _add_items(self, picked: list[dict], title: str) -> None:
+        pod = self.pod
         srcs = {}
         for i, p in enumerate(picked[: int(pod.get("max_url_sources", 12))]):   # 記事本文を読ませる
             sid = _id(_cli(pod, ["source", "add", p["link"], "-n", self.nb, "--json"], check=False),

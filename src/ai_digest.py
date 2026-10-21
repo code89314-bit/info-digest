@@ -159,6 +159,26 @@ def llm_settings(cfg: dict) -> dict:
     return llm
 
 
+# 量子化したローカルLLMが混ぜがちな中国語の語・字体 → 日本語。簡体字は日本語では使わない字なので機械的に置き換えてよい
+JA_WORDS = {"随访": "フォローアップ", "监测": "モニタリング", "监视": "監視", "会诊": "コンサルト", "流程": "手順", "路径": "パス",
+            "分层": "層別化", "等级": "等級", "生物标志物": "バイオマーカー", "标志物": "マーカー", "复发": "再発",
+            "骨髓": "骨髄", "胰腺": "膵", "乳腺癌": "乳癌", "治疗": "治療", "诊断": "診断", "药物": "薬物"}
+JA_CHARS = str.maketrans({"转": "転", "监": "監", "测": "測", "级": "級", "层": "層", "变": "変", "选": "選", "择": "択",
+                          "疗": "療", "药": "薬", "剂": "剤", "应": "応", "对": "対", "发": "発", "髓": "髄", "诊": "診",
+                          "检": "検", "评": "評", "价": "価", "险": "険", "适": "適", "证": "証", "标": "標", "准": "準",
+                          "进": "進", "时": "時", "间": "間", "关": "関", "联": "連", "经": "経", "验": "験", "试": "試",
+                          "结": "結", "组": "組", "报": "報", "处": "処", "胰": "膵", "调": "調"})
+
+
+def ja_fix(text: str) -> str:
+    """ローカルLLMの出力に混ざった中国語の語・字体を日本語に直す（NotebookLM の出力には不要）。"""
+    if not text:
+        return text
+    for zh, ja in JA_WORDS.items():
+        text = text.replace(zh, ja)
+    return text.translate(JA_CHARS)
+
+
 def strip_think(text: str) -> str:
     """Qwen系などが出す <think>...</think> を取り除く（閉じタグだけ残った場合はそこまで捨てる）。"""
     text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S)
@@ -294,8 +314,8 @@ def select_with_llm(items: list[dict], cfg: dict) -> list[dict] | None:
                 score = float(p.get("score", 3))
             except (ValueError, TypeError):
                 score = 3.0
-            picked.append({**base, "title_ja": p.get("title_ja") or base["title"],
-                           "summary_ja": p.get("summary_ja", ""),
+            picked.append({**base, "title_ja": ja_fix(str(p.get("title_ja") or base["title"])),
+                           "summary_ja": ja_fix(str(p.get("summary_ja", ""))),
                            "tag": p.get("tag") if p.get("tag") in tags else "その他", "score": score})
     if cands and ok_batches == 0:
         return None
@@ -400,7 +420,7 @@ def write_overview(picked: list[dict], cfg: dict) -> str | None:
                                     group_by=ov.get("group_by") or "テーマ", extra=extra,
                                     max_chars=ov.get("max_chars", 1200), items="\n".join(lines))
     try:
-        text = strip_think(chat(prompt, llm)).strip()
+        text = ja_fix(strip_think(chat(prompt, llm)).strip())
     except LLMError as ex:
         print("動向まとめを作れませんでした:", ex)
         return None
