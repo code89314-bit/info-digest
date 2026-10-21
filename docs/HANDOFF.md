@@ -105,6 +105,13 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - `.github/workflows/ai_digest.yml` の `schedule:` はコメントアウト（`workflow_dispatch` は残した）。
 - 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 8:13 / 19:13。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
 
+- 追加: **がん薬物療法** `onco`（`config.yaml` の別区画、`DISCORD_WEBHOOK_ONCO`）。国内（PMDA 承認審査・安全対策、厚労省 報道発表、Minds）＋海外（ESMO・NCI・OncLive・Targeted Oncology・CancerNetwork。FDA公式はこのPCから403/404のため報道で代替）。
+  - 投稿の先頭に LLM が書く「📋 今日の動向まとめ」（`overview`、がん種別）。冒頭に注意書き（`notice`）。
+  - `llm.dedupe: true` で、出典違いの同じ出来事を最後にLLMで1件にまとめる（全区画共通）。
+  - **podcast**（`src/podcast_nlm.py`）: NotebookLM（`E:\onco_tekisei` と同じ notebooklm-py・認証・1日上限台帳 `audio_usage.json`）で音声概要を作り、ffmpeg で10MB以下に圧縮して Discord に添付。失敗時は理由を1行投稿。
+  - タスク「info-digest onco」毎日 7:50（NotebookLM の認証延命 7:30 の後）。
+  - 既知の限界: Strata の Q2_0 量子化モデルは、要約に中国語の字体や英語が混ざることがある。
+
 ## 4. 将来の拡張案（ユーザーと相談済み・未着手）
 
 ### 4-1. 英語の話題記事の「音声ダイジェスト」（NotebookLM風）

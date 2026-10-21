@@ -116,6 +116,36 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
         _send(url, p)
 
 
+def post_discord_file(webhook_env: str, path: Path, content: str = "", username: str | None = None) -> None:
+    """ファイル（podcast の mp3 など）を1つ添付して投稿。DRY_RUN=1 なら表示するだけ。
+
+    Webhook の添付上限はサーバーのブースト無しで 10MB。超えると 413 になる。
+    """
+    path = Path(path)
+    if os.environ.get("DRY_RUN") == "1":
+        print("---- DRY_RUN (file) ----")
+        print(content, f"[{path.name} {path.stat().st_size / 1e6:.1f}MB]")
+        return
+    url = os.environ.get(webhook_env)
+    if not url:
+        raise SystemExit(f"環境変数 {webhook_env} が未設定です（自宅サーバーでは .env に登録してください）")
+    payload = {"content": content, "allowed_mentions": {"parse": []}}
+    if username:
+        payload["username"] = username
+    for attempt in range(4):
+        with open(path, "rb") as fh:
+            r = requests.post(url, data={"payload_json": json.dumps(payload, ensure_ascii=False)},
+                              files={"files[0]": (path.name, fh, "audio/mpeg")}, timeout=300)
+        if r.status_code == 429:
+            time.sleep(float(r.json().get("retry_after", 2)) + 0.5)
+            continue
+        if r.status_code >= 400:
+            print("Discord error:", r.status_code, r.text[:500])
+        r.raise_for_status()
+        return
+    raise RuntimeError("Discordへの添付がレート制限で失敗しました")
+
+
 def _send(url: str, payload: dict) -> None:
     for attempt in range(4):
         r = requests.post(url, json=payload, timeout=30)

@@ -45,6 +45,8 @@ ai_digest:
     max_tokens: 4000
     # JSON形式での返答をサーバーに要求する（非対応のサーバーなら自動で外して再送）
     json_mode: true
+    # 出典は違うが同じ出来事を報じた記事を、最後にLLMで1件にまとめる（問い合わせが1回増える）
+    dedupe: true
     # サーバー独自の追加設定（そのままリクエストに付ける）。
     # Strata: reasoning_budget_tokens = 考える量の上限（0で無制限）。
     #         考えさせない場合は reasoning_budget_tokens の代わりに  chat_template_kwargs: {enable_thinking: false}
@@ -155,3 +157,104 @@ ai_global:
       url: https://github.com/Comfy-Org/ComfyUI/releases.atom
     - name: Ollama リリース
       url: https://github.com/ollama/ollama/releases.atom
+
+# ==== がん薬物療法（抗がん剤の新薬・ガイドライン更新・安全性情報）+ 毎日の podcast ====
+# 投稿先は専用チャンネル。llm: を書かなければ ai_digest の llm と同じサーバー・モデルを使います。
+# 初めて動かすとき・情報源を足したときは、先に「既読化だけ」を1回実行します（日付の無いRSSが一度に流れるのを防ぐ）:
+#   .venv\Scripts\python.exe src\ai_digest.py onco --seed
+onco:
+  title: がん薬物療法ニュース
+  icon: 💊
+  # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
+  webhook_env: DISCORD_WEBHOOK_ONCO
+  # 投稿の冒頭に小さく表示する注意書き
+  notice: LLMによる自動要約です。誤りを含む可能性があります。治療・調剤の判断は添付文書・ガイドライン原文で確認してください。
+  max_items: 12
+  max_candidates: 200
+  lookback_hours: 48
+  # 1件あたりの要約の最大文字数
+  summary_len: 150
+
+  # ---- 何を拾うか（LLMへの指示。自由に書き換えてOK） ----
+  focus: |
+    病院薬剤師・がん専門薬剤師が日常業務で知っておくべき、がん薬物療法（抗がん剤）の新しい情報。
+    - 新薬：抗がん剤の承認・適応追加・承認申請・薬事審議会（部会）での審議、国内外（FDA・EMA）の承認
+    - ガイドライン：各種がんの診療ガイドラインの公開・改訂（国内学会、NCCN・ESMO・ASCO など）
+    - 安全性：抗がん剤の添付文書改訂、重大な副作用、適正使用のお願い、供給・回収
+    - 治療の動向：標準治療を変えうる大規模臨床試験の結果（第3相など）、主要学会（ASCO・ESMO等）での発表
+  adopt: 上の関心に直接関わる一次情報（承認・ガイドライン改訂・安全性情報・重要な臨床試験結果）
+  exclude: |
+    抗がん剤・がん治療と関係のない話題（他の疾患の薬、医療制度一般、人事・採用、イベント告知だけのもの）、
+    がん検診・予防・生活習慣の話題、基礎研究だけで臨床への道筋がまだ遠いもの、企業の業績・株価・提携ニュース
+  interests:
+    - 日本で使えるようになる新薬・新しい適応
+    - 国内ガイドラインの改訂
+    - 免疫チェックポイント阻害薬・抗体薬物複合体（ADC）・分子標的薬
+  # 見出しの分類
+  tags: [新薬・承認, ガイドライン, 安全性情報, 臨床試験・学会, その他]
+  # LLMが使えないときの絞り込みキーワード
+  fallback_keywords: [がん, 癌, 腫瘍, 抗悪性, 白血病, リンパ腫, 骨髄腫, 肉腫, cancer, oncolog, tumor, carcinoma, lymphoma, leukemia, myeloma]
+
+  # ---- 今日の動向まとめ（選んだ記事をLLMが総括して、投稿の先頭に付ける） ----
+  overview:
+    enabled: true
+    audience: 病院薬剤師・がん専門薬剤師
+    group_by: がん種（がん種に分けられないものは「新薬・承認全般」「安全性情報」など）
+    max_chars: 1200
+    rules:
+      - 海外（FDA・EMA等）の承認は「海外（FDA）」のように明記する。日本での承認・保険適用は情報に書かれている場合だけ書き、書かれていないときは触れない（「記載なし」とも書かない）
+      - ガイドラインは学会名・版・主な変更点を書く
+
+  # ---- podcast（NotebookLM の音声概要）。このPCでだけ動く ----
+  podcast:
+    enabled: true
+    # 選ばれた記事がこの件数より少ない日は作らない
+    min_items: 2
+    # NotebookLM のノート名
+    title: がん薬物療法ニュース
+    # 番組への指示（NotebookLM に渡す）
+    instructions: |
+      日本の病院薬剤師・がん専門薬剤師向けの、今日のがん薬物療法ニュース番組。
+      新薬・適応追加、ガイドライン改訂、安全性情報、重要な臨床試験を、がん種ごとに整理して、
+      何が変わったか・臨床現場（処方監査、副作用モニタリング、患者指導）への影響を具体的に解説する。
+      海外の承認と日本の承認を必ず区別し、資料にない数値や承認状況は推測しない。
+      最後に「今日のポイント」を3つにまとめる。
+    format: deep-dive      # deep-dive / brief / critique / debate
+    length: default        # short / default / long（長いと Discord の10MBに収まらないことがある）
+    language: ja
+    # 記事のURLも資料として読ませる件数（本文まで読んだ解説になる。取れないURLは飛ばす）
+    max_url_sources: 8
+    # Discord の添付上限（ブースト無しのサーバーは10MB）
+    max_mb: 9.5
+    file_prefix: onco
+    # notebooklm CLI の場所（Python 3.10 に入っている）と、認証の自動延命コマンド
+    cli: notebooklm
+    cli_path_add: '%APPDATA%\Python\Python310\Scripts'
+    auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
+    # 音声の1日上限（適正使用ガイド用の onco_tekisei と同じ台帳で合算）
+    ledger: 'E:\onco_tekisei\audio_usage.json'
+    daily_limit: 3
+
+  sources:
+    # ---- 国内 ----
+    - name: PMDA 承認審査
+      url: https://www.pmda.go.jp/rss_021.xml
+    - name: PMDA 安全対策
+      url: https://www.pmda.go.jp/rss_018.xml
+    - name: 厚労省 報道発表
+      url: https://www.mhlw.go.jp/stf/news.rdf
+    - name: Minds 診療ガイドライン
+      url: https://minds.jcqhc.or.jp/feed/
+    # ---- 海外（英語。LLMが日本語で要約） ----
+    - name: ESMO News
+      url: https://www.esmo.org/rss/feed/esmo-news
+    - name: NCI Cancer Currents
+      url: https://www.cancer.gov/publishedcontent/rss/news-events/cancer-currents-blog.rss
+    - name: NCI News Releases
+      url: https://www.cancer.gov/publishedcontent/rss/syndication/rss/ncinewsreleases.rss
+    - name: OncLive
+      url: https://www.onclive.com/rss
+    - name: Targeted Oncology
+      url: https://www.targetedonc.com/rss
+    - name: CancerNetwork
+      url: https://www.cancernetwork.com/rss

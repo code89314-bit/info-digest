@@ -282,6 +282,87 @@ assert common.http_get("https://www.reddit.com/r/x/.rss").status_code == 200
 assert SLEPT == [15, 30], SLEPT
 print("✅ http 429 retry")
 
+# ---------- onco：CDATA見出し・既読化だけ（--seed）・動向まとめ・podcast の部品 ----------
+assert ai_digest.clean("<![CDATA[HER2+ Maintenance Approvals]]>") == "HER2+ Maintenance Approvals"
+OCFG = {"ai_digest": GCFG["ai_digest"],
+        "onco": {"title": "がん", "icon": "💊", "webhook_env": "DISCORD_WEBHOOK_ONCO", "notice": "原文で確認",
+                 "sources": [{"name": "PMDA", "url": "https://ex.com/rss"}], "tags": ["新薬・承認", "その他"],
+                 "adopt": "承認・ガイドライン改訂", "summary_len": 150,
+                 "overview": {"enabled": True, "audience": "薬剤師", "group_by": "がん種", "rules": ["海外と日本を区別"]},
+                 "podcast": {"enabled": True, "min_items": 1}}}
+ai_digest.load_config = lambda: OCFG
+POSTED.clear()
+ai_digest.post_discord = lambda env, **k: POSTED.append((env, k))
+ai_digest.main("onco", seed=True)   # 既読にするだけ
+assert POSTED == [] and {"a", "b"} <= set(common.load_state("onco")["seen"])
+
+common.save_state("onco", {})
+PROMPTS = []
+
+
+def onco_post(url, headers=None, json=None, timeout=None):
+    PROMPTS.append(json)
+    if json.get("response_format"):   # 選別（JSON）
+        return FakeChat(chat_reply([{"i": 0, "title_ja": "新薬Xが承認", "summary_ja": "肺がんに適応", "tag": "新薬・承認",
+                                     "score": 5}]))
+    return FakeChat("**肺がん**\n- 新薬Xが承認（海外）")   # 動向まとめ（文章）
+
+
+ai_digest.requests.post = onco_post
+PODS = []
+sys.modules["podcast_nlm"] = type(sys)("podcast_nlm")
+sys.modules["podcast_nlm"].run = lambda picked, overview, pod, **k: PODS.append((len(picked), overview, k["webhook"]))
+ai_digest.main("onco")
+env, k = POSTED[0]
+assert env == "DISCORD_WEBHOOK_ONCO" and k["content"].startswith("💊 **がん**") and "原文で確認" in k["content"]
+assert k["embeds"][0]["title"] == "📋 今日の動向まとめ" and "新薬X" in k["embeds"][0]["description"]
+assert "承認・ガイドライン改訂" in PROMPTS[0]["messages"][0]["content"] and "150字以内" in PROMPTS[0]["messages"][0]["content"]
+assert "response_format" not in PROMPTS[1] and "海外と日本を区別" in PROMPTS[1]["messages"][0]["content"]
+assert PODS == [(1, "**肺がん**\n- 新薬Xが承認（海外）", "DISCORD_WEBHOOK_ONCO")], PODS
+del sys.modules["podcast_nlm"]
+print("✅ onco digest")
+
+import podcast_nlm  # noqa: E402
+
+assert podcast_nlm.bitrate_for(20 * 60, 9.5) == 61      # 20分なら 61kbps で 9.5MB に収まる
+assert podcast_nlm.bitrate_for(5 * 60, 9.5) == 64       # 短ければ上限64kbps
+assert podcast_nlm.bitrate_for(90 * 60, 9.5) == 24      # 長すぎても24kbpsより下げない（その場合は上限超えで失敗）
+ledger = TMP / "audio_usage.json"
+pod = {"ledger": str(ledger)}
+assert podcast_nlm.used_today(pod) == 0
+podcast_nlm.record_use(pod)
+podcast_nlm.record_use(pod)
+assert podcast_nlm.used_today(pod) == 2
+txt = podcast_nlm.source_text([{"title_ja": "新薬X", "tag": "新薬・承認", "source": "PMDA", "link": "https://ex.com/x",
+                                 "summary_ja": "要約", "title": "X approved", "summary": "body"}], "まとめ", "がん 2026")
+assert "## 今日の動向まとめ" in txt and "https://ex.com/x" in txt and "X approved" in txt
+assert podcast_nlm._id({"notebook": {"id": "nb1"}}, "notebook", "id") == "nb1"
+assert podcast_nlm._id({"source_id": "s1"}, "source", "source_id", "id") == "s1"
+print("✅ podcast parts")
+
+# ---------- 出典違いの同じ出来事を LLM でまとめる（llm.dedupe） ----------
+DCFG = {**LCFG, "max_items": 5, "llm": {**LCFG["llm"], "batch_size": 10, "dedupe": True}}
+DEDUPE_SENT = []
+
+
+def dedupe_post(url, headers=None, json=None, timeout=None):
+    content = json["messages"][0]["content"]
+    if "同じ出来事" in content:
+        DEDUPE_SENT.append(content)
+        return FakeChat('{"drop": [1, 7]}')   # 7 は範囲外 → 無視
+    return FakeChat(chat_reply([{"i": n, "title_ja": f"見出し{n}", "summary_ja": "s", "tag": "その他", "score": 5 - n}
+                                for n in range(3)]))
+
+
+ai_digest.requests.post = dedupe_post
+got = ai_digest.select_with_llm(CANDS, DCFG)
+assert [p["title_ja"] for p in got] == ["見出し0", "見出し2"], got
+assert "[1] 見出し1" in DEDUPE_SENT[0]
+ai_digest.requests.post = lambda *a, **k: FakeChat(chat_reply([{"i": 0, "title_ja": "a", "summary_ja": "s"},
+                                                               {"i": 1, "title_ja": "b", "summary_ja": "s"}]))
+assert len(ai_digest.select_with_llm(CANDS, DCFG)) == 2   # 重複チェックが解釈できなければそのまま
+print("✅ llm dedupe")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

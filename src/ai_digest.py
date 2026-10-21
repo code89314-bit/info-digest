@@ -31,7 +31,9 @@ def get_tags(cfg: dict) -> list[str]:
 
 
 def clean(text: str, n: int = 400) -> str:
-    text = html.unescape(re.sub(r"<[^>]+>", " ", text or ""))
+    # OncLive などは見出しを <![CDATA[...]]> で包んでいる。タグ扱いで丸ごと消えないよう先に中身を取り出す
+    text = re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", text or "", flags=re.S)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
     text = re.sub(r"\s+", " ", text).strip()
     return text[:n]
 
@@ -106,24 +108,25 @@ def collect(cfg: dict, seen: set) -> list[dict]:
     return items
 
 
-PROMPT = """あなたは情報キュレーターです。以下は過去1日ほどの新着記事・リリース・モデルの候補です。
+PROMPT = """あなたは情報キュレーターです。以下は過去1日ほどの新着情報の候補です。
 読者は「インプレッション稼ぎの定型投稿」にうんざりしており、中身のある一次情報だけを求めています。
 
 読者の関心（これに合うものだけ採用）:
 {focus}
 
 選定基準:
-- 採用: 上の関心に直接役立つ新モデル・新機能・リリース・実用的な手法や検証
+- 採用: {adopt}
 - 除外: {exclude}
 - 除外: 宣伝目的・中身の薄い記事、同じ話題の重複（最も一次情報に近いものを1つ残す）
 - 優先テーマ: {interests}
 - 最大 {max_items} 件。該当が少なければ少なくてよい（0件も可）。
 
-各採用記事について、日本語で:
+各採用記事について、日本語で（英語の記事も日本語で書く）:
 - title_ja: 内容が分かる簡潔な見出し（40字以内）
-- summary_ja: 何が新しく、なぜ重要かを1〜2文（120字以内）。誇張しない
+- summary_ja: 何が新しく、なぜ重要かを1〜2文（{summary_len}字以内）。誇張しない。候補に書かれていない事実を補わない
+- 日本語は自然に。英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・製品名・試験名は原語のままでよい）。
+  中国語の字体（简体字・繁體字）を使わない
 - tag: {tags} のいずれか
-
 - score: 読者にとっての価値 1〜5（5が最も価値が高い）
 
 JSONのみを出力（前後に説明文やコードブロックを付けない）:
@@ -230,7 +233,9 @@ def build_prompt(batch: list[dict], cfg: dict, summary_chars: int) -> str:
     lines = [f"[{i}] ({it['source']}) {it['title']} — {it['summary'][:summary_chars]}" for i, it in enumerate(batch)]
     focus = (cfg.get("focus") or "AI・LLM全般").strip()
     exclude = (cfg.get("exclude") or "関心と無関係な話題").strip()
+    adopt = (cfg.get("adopt") or "上の関心に直接役立つ新モデル・新機能・リリース・実用的な手法や検証").strip()
     return PROMPT.format(focus=focus, exclude=exclude, interests="、".join((cfg.get("interests") or [])) or "特になし",
+                         adopt=adopt, summary_len=cfg.get("summary_len", 120),
                          max_items=cfg.get("max_items", 12), tags="／".join(get_tags(cfg)),
                          candidates="\n".join(lines))
 
@@ -288,7 +293,35 @@ def select_with_llm(items: list[dict], cfg: dict) -> list[dict] | None:
             continue
         keys |= k
         out.append(p)
-    return out[: cfg.get("max_items", 12)]
+    limit = cfg.get("max_items", 12)
+    if llm.get("dedupe") and len(out) > 1:
+        out = dedupe_with_llm(out[: limit * 2], llm, chat)
+    return out[:limit]
+
+
+DEDUPE_PROMPT = """以下は採用候補のニュースです（スコアの高い順）。出典は違っても「同じ出来事」を報じているものを探してください。
+同じ出来事のグループでは、最も一次情報に近い・詳しい1件だけを残し、残りの番号を drop に入れます。
+別の出来事（同じ薬でも別の適応・別の試験など）は残します。重複が無ければ drop は空にします。
+
+JSONのみを出力: {{"drop": [番号, ...]}}
+
+候補:
+{items}"""
+
+
+def dedupe_with_llm(items: list[dict], llm: dict, chat) -> list[dict]:
+    """出典違いで同じ出来事を報じた記事をLLMにまとめさせる（llm.dedupe: true のとき）。失敗したらそのまま返す。"""
+    lines = [f"[{i}] {p['title_ja']} — {p['summary_ja'][:100]}（{p['source']}）" for i, p in enumerate(items)]
+    try:
+        text = chat(DEDUPE_PROMPT.format(items="\n".join(lines)), llm)
+        m = re.search(r"\{.*\}", strip_think(text), flags=re.S)
+        drop = {int(i) for i in json.loads(m.group(0)).get("drop", [])} if m else set()
+    except (LLMError, json.JSONDecodeError, ValueError, TypeError, AttributeError) as ex:
+        print("重複チェックを省略:", ex)
+        return items
+    if drop:
+        print(f"  同じ出来事の重複を {len(drop & set(range(len(items))))} 件まとめました")
+    return [p for i, p in enumerate(items) if i not in drop]
 
 
 def select_with_claude(items: list[dict], cfg: dict) -> list[dict] | None:
@@ -328,6 +361,38 @@ def build_embeds(picked: list[dict], tags: list[str] | None = None) -> list[dict
     return embeds
 
 
+OVERVIEW_PROMPT = """あなたは専門ニュースの編集者です。読者: {audience}
+以下は本日選んだ新着情報です。これだけを根拠に「今日の動向まとめ」を日本語で書いてください。
+
+- {group_by}ごとに **太字の見出し** を立て、その下に箇条書きで「何が変わったか」「現場への影響・注意点」を簡潔に
+- 情報に書かれていない数値・用量・承認状況・日付を補わない。不確かなことは断定しない
+- 英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・試験名は原語のままでよい）。中国語の字体を使わない
+{extra}- 全体で{max_chars}字以内。前置きや結びの挨拶は不要
+
+新着情報:
+{items}"""
+
+
+def write_overview(picked: list[dict], cfg: dict) -> str | None:
+    """選ばれた記事から「動向まとめ」の文章をLLMに書かせる（ai_digest.overview）。失敗したら None。"""
+    ov = cfg.get("overview") or {}
+    llm = {**llm_settings(cfg), "json_mode": False}
+    chat = CHAT.get(llm["provider"])
+    if not chat or not picked:
+        return None
+    lines = [f"- [{p['tag']}] {p['title_ja']}：{p['summary_ja']}（{p['source']}）" for p in picked]
+    extra = "".join(f"- {r}\n" for r in (ov.get("rules") or []))
+    prompt = OVERVIEW_PROMPT.format(audience=ov.get("audience") or "この分野の専門家",
+                                    group_by=ov.get("group_by") or "テーマ", extra=extra,
+                                    max_chars=ov.get("max_chars", 1200), items="\n".join(lines))
+    try:
+        text = strip_think(chat(prompt, llm)).strip()
+    except LLMError as ex:
+        print("動向まとめを作れませんでした:", ex)
+        return None
+    return text[:3900] or None
+
+
 def section_config(section: str) -> dict:
     """config.yaml の区画（ai_digest / ai_global など）。llm を書いていない区画は ai_digest の llm を使う。"""
     full = load_config()
@@ -337,17 +402,24 @@ def section_config(section: str) -> dict:
     return cfg
 
 
-def main(section: str = "ai_digest") -> None:
-    """section: config.yaml の区画名。既読管理（state/<section>.json）も区画ごとに別。"""
+def main(section: str = "ai_digest", seed: bool = False) -> None:
+    """section: config.yaml の区画名。既読管理（state/<section>.json）も区画ごとに別。
+
+    seed=True: 今ある記事を既読にするだけで投稿しない（日付の無いRSSを足したときの初回用）。
+    """
     cfg = section_config(section)
     if not cfg:
         raise SystemExit(f"config.yaml に {section}: がありません")
     state = load_state(section)
     seen = state.get("seen", [])
+    webhook = cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI"
+    title = cfg.get("title") or "AI・LLMダイジェスト"
+    icon = cfg.get("icon") or "🤖"
 
     items = collect(cfg, set(seen))
     print(f"候補 {len(items)} 件")
-    if items:
+    picked, overview = [], None
+    if items and not seed:
         llm = llm_settings(cfg)
         picked = select_with_llm(items, cfg)
         mode = f"LLM選定（{llm['provider']}: {llm.get('model')}）"
@@ -358,16 +430,31 @@ def main(section: str = "ai_digest") -> None:
 
         if picked:
             jst = time.strftime("%m/%d %H:%M", time.gmtime(time.time() + 9 * 3600))
-            title = cfg.get("title") or "AI・LLMダイジェスト"
-            post_discord(cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI", username=title,
-                         content=f"🤖 **{title}**（{jst}）候補{len(items)}件から{len(picked)}件",
-                         embeds=build_embeds(picked, get_tags(cfg)))
+            embeds = build_embeds(picked, get_tags(cfg))
+            if (cfg.get("overview") or {}).get("enabled"):
+                overview = write_overview(picked, cfg)
+                if overview:
+                    embeds.insert(0, {"title": "📋 今日の動向まとめ", "description": overview, "color": 0x5C6BC0})
+            content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
+            if cfg.get("notice"):
+                content += f"\n-# {cfg['notice'].strip()}"
+            post_discord(webhook, username=title, content=content, embeds=embeds)
 
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
-    save_state(section, state)
+    save_state(section, state)   # 音声づくり（長い・失敗しうる）の前に既読を確定させる
+    if seed:
+        print(f"既読にしました: {len(items)} 件（投稿なし）")
+
+    pod = cfg.get("podcast") or {}
+    if pod.get("enabled") and len(picked) >= int(pod.get("min_items", 1)):
+        import podcast_nlm   # NotebookLM を使うときだけ読み込む
+        podcast_nlm.run(picked, overview, pod, webhook=webhook, username=title)
 
 
 if __name__ == "__main__":
     # 使い方: python src/ai_digest.py            → ai_digest（日本語記事）
     #         python src/ai_digest.py ai_global  → ai_global（海外の話題）
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "ai_digest"))
+    #         python src/ai_digest.py onco       → onco（がん薬物療法）
+    #         python src/ai_digest.py onco --seed  → 今ある記事を既読にするだけ（初回用）
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    sys.exit(main(args[0] if args else "ai_digest", seed="--seed" in sys.argv))
