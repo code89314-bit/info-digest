@@ -356,9 +356,9 @@ print("✅ onco digest")
 
 import podcast_nlm  # noqa: E402
 
-assert podcast_nlm.bitrate_for(20 * 60, 9.5) == 61      # 20分なら 61kbps で 9.5MB に収まる
+assert podcast_nlm.bitrate_for(20 * 60, 9.5) == 56      # 20分なら 61kbps 相当 → MP3 で使える 56kbps
 assert podcast_nlm.bitrate_for(5 * 60, 9.5) == 64       # 短ければ上限64kbps
-assert podcast_nlm.bitrate_for(90 * 60, 9.5) == 24      # 長すぎても24kbpsより下げない（その場合は上限超えで失敗）
+assert podcast_nlm.bitrate_for(90 * 60, 9.5) == 24      # 長いときは24kbpsから（収まらなければ compress が16kbpsまで下げる）
 ledger = TMP / "audio_usage.json"
 pod = {"ledger": str(ledger)}
 assert podcast_nlm.used_today(pod) == 0

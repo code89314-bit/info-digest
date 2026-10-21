@@ -278,17 +278,24 @@ def duration_sec(path: Path, ffmpeg: str) -> float:
     return int(h) * 3600 + int(mi) * 60 + float(s)
 
 
+# 24kHz の MP3（MPEG-2）で使えるビットレート。これ以外を指定すると上の値に切り上げられて上限を超える
+MP3_RATES = (16, 24, 32, 40, 48, 56, 64)
+
+
 def bitrate_for(seconds: float, max_mb: float) -> int:
     """max_mb に収まるビットレート（kbps）。声なので 24〜64kbps のモノラルで十分。"""
     kbps = math.floor(max_mb * 8 * 1000 / max(seconds, 1) * 0.97)   # 3% はヘッダ等の余裕
-    return max(24, min(64, kbps))
+    return max([r for r in MP3_RATES if r <= kbps and r >= 24] or [24])
 
 
 def compress(src: Path, dst: Path, max_mb: float, ffmpeg: str) -> float:
     secs = duration_sec(src, ffmpeg)
     kbps = bitrate_for(secs, max_mb)
-    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(src), "-ac", "1", "-ar", "24000",
-                    "-b:a", f"{kbps}k", str(dst)], check=True)
+    for rate in [r for r in MP3_RATES if r <= kbps][::-1]:   # 収まらなければ1段ずつ下げる（16kbps まで）
+        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(src), "-ac", "1", "-ar", "24000",
+                        "-b:a", f"{rate}k", str(dst)], check=True)
+        if dst.stat().st_size <= max_mb * 1e6:
+            break
     if dst.stat().st_size > max_mb * 1e6:
         raise PodcastError(f"圧縮しても {dst.stat().st_size / 1e6:.1f}MB で上限 {max_mb}MB を超えます"
                            f"（{secs / 60:.0f}分）。podcast.length を short にしてください")
