@@ -167,7 +167,7 @@ onco:
   title: がん薬物療法ニュース
   icon: 💊
   # Discord に表示するアイコン（assets/onco.png。作り直すときは scripts/make_icons.py）
-  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png?v=2
   # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
   webhook_env: DISCORD_WEBHOOK_ONCO
   # 投稿の冒頭に小さく表示する注意書き
@@ -314,7 +314,7 @@ onco:
 learn:
   title: がん薬物療法 学習
   icon: 📚
-  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/learn.png
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/learn.png?v=2
   webhook_env: DISCORD_WEBHOOK_ONCO
   notice: NotebookLM がウェブ上の資料から自動で作成しています。誤りを含む可能性があります。判断は添付文書・ガイドライン原文で確認してください。
   audience: 病院薬剤師・がん専門薬剤師
