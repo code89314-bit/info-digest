@@ -259,7 +259,8 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
             notebook.audio(raw)
         secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
         post_discord_file(webhook, small, username=username,
-                          content=f"🎧 **今日のニュース podcast**（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")
+                          content=f"🎧 **{pod.get('label') or '今日のニュース podcast'}**"
+                                  f"（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")
         print(f"podcast を投稿しました: {small.name}")
         for old in sorted(out_dir.glob("*.mp3"))[:-int(pod.get("keep_files", 20))]:   # 古いものは消す
             old.unlink(missing_ok=True)

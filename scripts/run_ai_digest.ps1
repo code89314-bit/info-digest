@@ -5,7 +5,8 @@
 # Secrets and the local state dir come from .env in the repository root (not committed).
 # If the LLM server is not answering yet (PC just booted, or the GPU is lent to ComfyUI), wait for it
 # up to -WaitMinutes, then run anyway: ai_digest.py falls back to keyword matching by itself.
-param([string]$Section = 'ai_digest', [int]$WaitMinutes = 180)
+#   -Module onco_news -Section onco: weekly oncology news (collect daily, themed episode per weekday)
+param([string]$Section = 'ai_digest', [string]$Module = 'ai_digest', [int]$WaitMinutes = 180)
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -44,6 +45,6 @@ if ($base) {
 $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUNBUFFERED = '1'    # write progress to the log as it happens (not all at the end)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8    # read python's UTF-8 output as UTF-8 (not the ANSI code page)
-& $python src\ai_digest.py $Section 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
+& $python "src\$Module.py" $Section 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
 Log "exit code $LASTEXITCODE"
 exit $LASTEXITCODE

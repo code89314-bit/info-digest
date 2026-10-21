@@ -431,6 +431,51 @@ assert [r["title_ja"] for r in res] == ["見0", "見1", "見2"]
 assert "[0] T0" in cn.asked[0] and "[0] T0" not in cn.asked[1] and "[2] T2" in cn.asked[1]   # 2回目は残りだけ
 print("✅ notebooklm partial answer")
 
+# ---------- onco_news：毎日アーカイブにためる・急ぎの安全性情報だけ即日・曜日テーマの回 ----------
+import datetime as dt  # noqa: E402
+
+import onco_news  # noqa: E402
+
+NCFG = {"ai_digest": GCFG["ai_digest"],
+        "onco": {"title": "がん", "webhook_env": "DISCORD_WEBHOOK_ONCO", "notice": "原文で確認",
+                 "sources": [{"name": "PMDA", "url": "https://ex.com/rss"}],
+                 "tags": ["新薬・承認", "治療ストラテジー", "安全性情報", "その他"],
+                 "urgent": {"enabled": True, "tags": ["安全性情報"], "min_score": 4},
+                 "schedule": {"mon": {"theme": "新薬", "tags": ["新薬・承認"]},
+                              "tue": {"theme": "治療ストラテジー", "tags": ["治療ストラテジー"]},
+                              "sat": {"theme": "週間まとめ", "tags": []}},
+                 "episode": {"min_items": 2}, "overview": {"enabled": True, "audience": "薬剤師"}}}
+ai_digest.load_config = lambda: NCFG
+NPOST = []
+onco_news.post_discord = lambda env, **k: NPOST.append((env, k))
+ai_digest.requests.post = lambda *a, **k: FakeChat(chat_reply(
+    [{"i": 0, "title_ja": "新薬Aが承認", "summary_ja": "s", "tag": "新薬・承認", "score": 3},
+     {"i": 1, "title_ja": "重大な副作用の追記", "summary_ja": "s", "tag": "安全性情報", "score": 5}]))
+common.save_state("onco", {})
+common.save_state("onco_archive", {"items": [
+    {"id": "old", "title": "Old", "link": "https://ex.com/old", "source": "S", "summary": "", "tag": "新薬・承認",
+     "score": 4, "title_ja": "新薬Bが承認", "summary_ja": "s", "date": (onco_news.now_jst().date()
+                                                                   - dt.timedelta(days=3)).isoformat()},
+    {"id": "stale", "title": "Stale", "link": "https://ex.com/st", "source": "S", "summary": "", "tag": "新薬・承認",
+     "score": 5, "title_ja": "古すぎる", "summary_ja": "s", "date": "2000-01-01"}]})
+onco_news.collect_into_archive(onco_news.ai_digest.section_config("onco"), "DISCORD_WEBHOOK_ONCO", "がん")
+arch = common.load_state("onco_archive")["items"]
+assert {a["id"] for a in arch} == {"old", "a", "b"}, arch          # 21日より古いものは消える
+assert len(NPOST) == 1 and "安全性情報（速報）" in NPOST[0][1]["content"]   # score 5 の安全性情報だけ即日
+assert "重大な副作用" in NPOST[0][1]["embeds"][0]["description"] and "新薬A" not in NPOST[0][1]["embeds"][0]["description"]
+ep, its = onco_news.episode_items(onco_news.ai_digest.section_config("onco"), "mon")
+assert ep["theme"] == "新薬" and [i["id"] for i in its] == ["old", "a"]   # スコア順、テーマの分類だけ
+NPOST.clear()
+ai_digest.requests.post = lambda *a, **k: FakeChat("**肺がん**\n- 今週の新薬")
+onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "mon", "DISCORD_WEBHOOK_ONCO", "がん")
+k = NPOST[0][1]
+assert "月曜：新薬" in k["content"] and k["embeds"][0]["title"] == "📋 今週の「新薬」トピックス"
+NPOST.clear()
+onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "tue", "DISCORD_WEBHOOK_ONCO", "がん")
+onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "sun", "DISCORD_WEBHOOK_ONCO", "がん")
+assert NPOST == []   # 火曜は0件で作らない、日曜は休み
+print("✅ onco_news")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500
