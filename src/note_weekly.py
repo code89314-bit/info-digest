@@ -427,6 +427,18 @@ def find_audio(cfg: dict, style: dict, start: dt.date, end: dt.date, dest):
     return dest
 
 
+def audio_meta(cfg: dict, style: dict, audio, start: dt.date, end: dt.date) -> dict | None:
+    """note の音声埋め込みに入れる情報（ファイル・カバー画像・タイトル・作者）。"""
+    if not audio:
+        return None
+    pod = style.get("podcast") or {}
+    cover = ROOT / (pod.get("cover") or "assets/onco.png")
+    return {"path": str(audio), "cover": str(cover) if cover.exists() else None,
+            "title": fill_dates(pod.get("audio_title") or "週刊がん薬物療法 {start:%-m/%-d}〜{end:%-m/%-d}（AI音声）",
+                                start, end),
+            "author": pod.get("author") or "NotebookLM（AI音声）"}
+
+
 def notebook_settings(cfg: dict) -> dict:
     """NotebookLM の設定。CLI の場所・認証は onco.podcast と共通にして、note_weekly.notebook で上書き。"""
     base = (load_config().get("onco") or {}).get("podcast") or {}
@@ -463,16 +475,18 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
     md_path.write_text(to_markdown(doc, memo), encoding="utf-8")
     html_path.write_text(to_html(doc, memo), encoding="utf-8")
     json_path = out_dir / f"{y}-W{w:02d}.json"   # note への下書き保存（やり直しは note_publish.py --draft）に使う
-    json_path.write_text(json.dumps({"title": doc["title"], "body_html": body_html(doc)}, ensure_ascii=False),
-                         encoding="utf-8")
+    audio_info = audio_meta(cfg, style, audio, start, end)
+    json_path.write_text(json.dumps({"title": doc["title"], "body_html": body_html(doc), "audio": audio_info},
+                                    ensure_ascii=False), encoding="utf-8")
     print(f"下書きを保存しました: {md_path}\n                    {html_path}\nトピック {len(topics)} 件・確認メモ {len(memo)} 件")
     note_line = "html をブラウザで開き、全選択コピー → note に貼り付け"
     post = cfg.get("note_post") or {}
     if post.get("enabled") and not dry_run:
         import note_publish
         try:
-            url = note_publish.save_draft(doc["title"], body_html(doc), headless=post.get("headless", False))
-            note_line = f"note に下書き保存しました（非公開）: {url}"
+            url, todo = note_publish.save_draft(doc["title"], body_html(doc), audio=audio_info,
+                                                headless=post.get("headless", False))
+            note_line = f"note に下書き保存しました（非公開）: {url}" + "".join(f"\n-# 未完了: {t}" for t in todo)
         except note_publish.NeedLogin as ex:
             note_line = f"note に下書き保存できませんでした: {ex}"
         except Exception as ex:   # noqa: BLE001  下書き保存は「おまけ」。通知とファイルは送る

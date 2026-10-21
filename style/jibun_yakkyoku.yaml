@@ -134,6 +134,10 @@ fixed_footer: |
 podcast:
   enabled: true
   heading: 今週の音声版（AI音声）
+  # note の音声プレーヤーに出す情報（カバー画像はリポジトリ内のパス）
+  audio_title: 週刊がん薬物療法 {start:%-m/%-d}〜{end:%-m/%-d}（AI音声）
+  author: じぶんの薬局（NotebookLM による AI音声）
+  cover: assets/onco.png
   body: |
     今週のトピックを音声でまとめたものです。NotebookLM（Google）で自動生成したAI音声で、話者は実在の人物ではありません。
     内容に誤りを含む可能性があります。詳細は一次資料でご確認ください。
