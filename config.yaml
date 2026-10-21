@@ -409,6 +409,14 @@ note_weekly:
   # NotebookLM の設定（CLI の場所・認証・音声の台帳は onco.podcast と共通。ここに書いた項目だけ上書き）
   notebook:
     max_url_sources: 30
+  # 一次情報での裏どり: Strata が記事ごとに検索語を作り、NotebookLM のウェブ検索で PMDA・厚労省・FDA・EMA・学会・論文・
+  # 製薬会社の公式発表を探して、同じノートの資料に足す（トピックの出典は一次情報を優先）。結果は確認メモに出る
+  verify:
+    enabled: true
+    # 裏どりする記事数（スコアの高い順。1件あたり10〜60秒）
+    max_items: 15
+    # 1記事に足す一次情報の数
+    per_item: 2
   # note への自動の「下書き保存」（非公開。公開は手で行う）。src/note_publish.py が note 専用のブラウザを操作する
   # 最初に1回だけ: .venv\Scripts\python.exe src\note_publish.py --login で開いたブラウザから note にログイン
   note_post:

@@ -193,6 +193,24 @@ class Notebook:
                 self.loaded.add(i)
         print(f"NotebookLM: 記事 {len(self.loaded)}/{len(picked)} 件の本文を読み込みました")
 
+    def discover(self, query: str) -> list[dict]:
+        """NotebookLM のウェブ検索（1回8秒ほど）。候補の [{url, title, hint}] を返す（資料には入れない）。"""
+        data = _cli(self.pod, ["research", "discover", query, "-n", self.nb, "--json"], check=False, timeout=300)
+        srcs = data.get("sources", []) if isinstance(data, dict) else []
+        return [s for s in srcs if isinstance(s, dict) and s.get("url")]
+
+    def add_urls(self, urls: list[str]) -> list[str]:
+        """URL を資料に足す。読み込めた URL を返す。"""
+        ids = {}
+        for u in urls:
+            sid = _id(_cli(self.pod, ["source", "add", u, "-n", self.nb, "--json"], check=False),
+                      "source", "source_id", "id")
+            if sid:
+                ids[sid] = u
+        return [u for sid, u in ids.items()
+                if _cli(self.pod, ["source", "wait", sid, "-n", self.nb, "--timeout", str(SOURCE_WAIT)],
+                        parse_json=False, check=False, timeout=SOURCE_WAIT + 60) is not None]
+
     def ask(self, question: str) -> str:
         with tempfile.TemporaryDirectory() as tmp:   # 長い質問はファイルで渡す（コマンドラインの長さ・文字化け対策）
             q = Path(tmp) / "q.txt"

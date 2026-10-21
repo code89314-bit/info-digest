@@ -42,7 +42,8 @@ TOPICS_PROMPT = """{digest}
 - heading: 小見出し（結論そのまま、30字以内）。海外の承認は先頭に【海外】。
 - conclusion / before / next: それぞれ1〜2文。1文40字以内。
 - data: 試験名・対象・主要評価項目の数値（任意、1行）。
-- source: 出典の表記（機関名・論文の書誌）。url: 一次情報のURL（無ければ記事のURL）。
+- source: 出典の表記（機関名・論文の書誌）。url: 一次情報のURL（記事に「一次情報」が添えてあればそれを使う。無ければ記事のURL）。
+- 事実・数値・日付は、一次情報の資料と記事の資料が食い違うときは一次情報に従う。
 - date: 出来事（承認・発表・改訂など）の日付。YYYY-MM-DD。資料に無ければ ""。
 - i: もとにした記事の番号（数値。複数なら最も一次情報に近い1つ）。
 
@@ -66,6 +67,24 @@ LEAD_PROMPT = """{digest}
 - hashtags: その号の一般名・がん種・学会名・ガイドライン名から5〜8個。「#」は付けない。
 
 {{"headline_1": "...", "headline_2": "...", "three_lines": ["...", "...", "..."], "hashtags": ["...", "..."]}}"""
+
+QUERY_PROMPT = """以下は今週のがん薬物療法ニュースの記事です。各記事の内容を、一次情報（規制当局・学会・論文・製薬会社の公式発表）で
+裏づけるためのウェブ検索語を1つずつ作ってください。
+- 国内の出来事（厚労省・PMDA・国内学会・国内承認）: 日本語。薬の一般名（カタカナ）・出来事（承認、適応追加、添付文書改訂など）・「厚生労働省」か「PMDA」を入れる
+- 海外の出来事（FDA・EMA・海外学会・海外の試験）: 英語。薬の一般名（英語）・出来事・「FDA」「EMA」や試験名を入れる
+- 検索語は20語以内。記事にない固有名詞は足さない
+
+{items}
+
+JSONのみを出力: {{"items": [{{"i": 番号, "query": "検索語"}}]}}"""
+
+CLASSIFY_PROMPT = """次のウェブページの候補を、ニュースの一次情報として使えるかで分けてください。
+一次情報 = 規制当局・行政（PMDA、厚労省、FDA、EMA など）、学会・ガイドライン、論文、製薬会社の公式発表（プレスリリース・IR）。
+一次情報でない = 報道・業界ニュース・まとめ・ブログ・患者向け解説・病院の案内。
+
+{items}
+
+JSONのみを出力: {{"items": [{{"i": 番号, "primary": true}}]}}  （一次情報の候補だけを列挙する）"""
 
 SPLIT_PROMPT = """次の各文は40字を超えています。意味・事実・数値を変えずに、それぞれ40字以内の2〜3文に分けてください。
 言葉を足したり、解釈を加えたりしないこと。です・ます体か体言止め。
@@ -163,7 +182,9 @@ def write_topics(nb, cfg: dict, style: dict, items: list[dict], start: dt.date, 
     for k in range(0, len(groups), per_ask):
         batch = groups[k:k + per_ask]
         theme_of = {i: th for th, ids in batch for i in ids}
-        lines = [f"[{i}] [{th}] {items[i]['title_ja']} — {items[i]['link']}" for i, th in theme_of.items()]
+        lines = [f"[{i}] [{th}] {items[i]['title_ja']} — {items[i]['link']}"
+                 + "".join(f"\n    一次情報: {p['url']}" for p in items[i].get("primary") or [])
+                 for i, th in theme_of.items()]
         prompt = TOPICS_PROMPT.format(digest=(style.get("prompt_digest") or "").strip(), rules=rules,
                                       example=((style.get("topic_block") or {}).get("format_example") or "").strip(),
                                       start=md_day(start, "%-m/%-d"), end=md_day(end, "%-m/%-d"),
@@ -186,6 +207,11 @@ def write_topics(nb, cfg: dict, style: dict, items: list[dict], start: dt.date, 
                      "url": clean(t.get("url")) or art.get("link", ""), "date": clean(t.get("date"))}
             if not topic["source"] and art:
                 topic["source"] = art.get("source", "")
+            prim = art.get("primary") or []
+            if prim and topic["url"] not in {p["url"] for p in prim}:
+                # 一次情報が見つかっているのに報道のURLを選んだときは、一次情報に差し替える
+                topic["url"], topic["source"] = prim[0]["url"], prim[0]["label"]
+            topic["verified"] = bool(prim) and topic["url"] in {p["url"] for p in prim}
             topics.append(topic)
     order = [th for th, _ in groups]
     topics.sort(key=lambda t: order.index(t["theme"]) if t["theme"] in order else len(order))
@@ -378,11 +404,80 @@ def check(doc: dict, style: dict, start: dt.date | None = None,
             memo.append(f"「{t['heading']}」：今週より前の出来事（{day.month}/{day.day}）なのに、結論に日付がありません")
         host = urlparse(t["url"]).netloc.lower()
         is_primary = any(host == d or host.endswith("." + d) for d in (primary or PRIMARY))
-        if host and not is_primary and "（報道）" not in t["conclusion"]:
+        if host and not is_primary and not t.get("verified") and "（報道）" not in t["conclusion"]:
             memo.append(f"「{t['heading']}」：出典が報道（{host}）だけです。一次情報を確認し、無ければ結論の文末に「（報道）」")
     for where, s in long:
         memo.append(f"{where}：{max_chars}字超（{len(s)}字）「{s}」")
     return memo, long
+
+
+LABEL_OF = {"pmda.go.jp": "PMDA", "mhlw.go.jp": "厚生労働省", "fda.gov": "FDA", "ema.europa.eu": "EMA",
+            "cancer.gov": "NCI", "clinicaltrials.gov": "ClinicalTrials.gov", "jrct.niph.go.jp": "jRCT"}
+
+
+def is_primary_host(host: str, domains: list[str]) -> bool:
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+def strata_json(prompt: str, cfg: dict) -> list[dict]:
+    llm = llm_settings(cfg)
+    try:
+        return parse_item_objects(CHAT[llm["provider"]](prompt, llm))
+    except Exception as ex:   # noqa: BLE001
+        print("Strata に聞けませんでした:", ex)
+        return []
+
+
+def verify_sources(nb, items: list[dict], cfg: dict) -> list[str]:
+    """記事ごとに一次情報を探してノートの資料に足し、items[i]["primary"] に記録する。裏どりの記録（確認メモ用）を返す。
+
+    Strata: 検索語づくりと「一次情報か」の判定。検索: NotebookLM のウェブ検索（discover）。
+    """
+    opt = cfg.get("verify") or {}
+    if not opt.get("enabled", True) or not hasattr(nb, "discover"):
+        return []
+    domains = cfg.get("primary_domains") or PRIMARY
+    target = [i for i in range(len(items))][: int(opt.get("max_items", 15))]
+    got = strata_json(QUERY_PROMPT.format(items="\n".join(
+        f"[{i}] {items[i]['title_ja']}（{items[i]['source']}）{items[i].get('summary_ja') or ''}"[:300] for i in target)), cfg)
+    queries = {}
+    for g in got:
+        try:
+            if int(g["i"]) in target and str(g.get("query") or "").strip():
+                queries[int(g["i"])] = ja_fix(str(g["query"]).strip())
+        except (KeyError, ValueError, TypeError):
+            continue
+    log, per = [], int(opt.get("per_item", 2))
+    for i in target:
+        q = queries.get(i)
+        if not q:
+            continue
+        cands = [c for c in nb.discover(q) if urlparse(c["url"]).netloc.lower() not in
+                 {urlparse(items[i]["link"]).netloc.lower()}][:10]
+        official = [c for c in cands if is_primary_host(urlparse(c["url"]).netloc.lower(), domains)]
+        others = [c for c in cands if c not in official]
+        if others:   # 規制当局・論文のドメイン以外は、製薬会社の公式発表かどうかを Strata に判定させる
+            ok = {int(g["i"]) for g in strata_json(CLASSIFY_PROMPT.format(items="\n".join(
+                f"[{k}] {c.get('title', '')} — {c['url']}" for k, c in enumerate(others))), cfg)
+                if str(g.get("primary")).lower() == "true" and str(g.get("i", "")).isdigit()}
+            official += [c for k, c in enumerate(others) if k in ok]
+        if re.search(r"[ぁ-んァ-ヶ一-龠]", q):   # 国内の出来事（日本語の検索語）に海外当局の資料は当てない
+            official = [c for c in official if not is_primary_host(urlparse(c["url"]).netloc.lower(),
+                                                                   ["fda.gov", "ema.europa.eu"])]
+        # 規制当局・行政を先に、次に論文・学会、最後に製薬会社の発表
+        official.sort(key=lambda c: 0 if is_primary_host(urlparse(c["url"]).netloc.lower(), list(LABEL_OF))
+                      else 1 if is_primary_host(urlparse(c["url"]).netloc.lower(), domains) else 2)
+        picked = official[:per]
+        loaded = set(nb.add_urls([c["url"] for c in picked])) if picked else set()
+        items[i]["primary"] = [{"url": c["url"], "title": c.get("title", ""),
+                                "label": LABEL_OF.get(next((d for d in LABEL_OF if is_primary_host(
+                                    urlparse(c["url"]).netloc.lower(), [d])), ""), "") or c.get("title", "")[:40]}
+                               for c in picked if c["url"] in loaded]
+        found = items[i]["primary"]
+        log.append(f"裏どり「{items[i]['title_ja']}」：" + ("、".join(p["url"] for p in found) if found
+                                                     else f"一次情報は見つかりませんでした（検索語: {q}）"))
+        print(log[-1])
+    return log
 
 
 def split_suggestions(long: list[tuple[str, str]], cfg: dict) -> dict[int, str]:
@@ -471,6 +566,11 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
         nb_factory = lambda: podcast_nlm.Notebook(notebook_settings(cfg), items)   # noqa: E731
     nb = nb_factory()
     try:
+        try:
+            verify_log = verify_sources(nb, items, cfg)
+        except Exception as ex:   # noqa: BLE001  裏どりができなくても下書きは作る
+            print("裏どりに失敗:", ex)
+            verify_log = [f"裏どりに失敗しました: {str(ex)[:200]}"]
         topics = write_topics(nb, cfg, style, items, start, end)
         if not topics:
             raise RuntimeError("NotebookLM からトピックを得られませんでした")
@@ -485,6 +585,7 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
     memo, long = check(doc, style, start, cfg.get("primary_domains"))
     for i, s in split_suggestions(long, cfg).items():
         memo.append(f"分割案：「{long[i][1]}」→「{s}」")
+    memo += verify_log
     md_path, html_path = out_dir / f"{y}-W{w:02d}.md", out_dir / f"{y}-W{w:02d}.html"
     md_path.write_text(to_markdown(doc, memo), encoding="utf-8")
     html_path.write_text(to_html(doc, memo), encoding="utf-8")

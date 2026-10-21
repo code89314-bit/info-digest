@@ -578,6 +578,37 @@ assert "使わない語「画期的」" in memo and "感嘆符" in memo and "40�
 assert "<h2>ガイドライン</h2>" in r["html"].read_text(encoding="utf-8")
 print("✅ note_weekly")
 
+# 裏どり: Strata の検索語 → discover → 一次情報（当局ドメイン＋Strata が公式発表と判定したもの）をノートへ → 出典を差し替え
+class VerifyNB(FakeNB):
+    added = []
+
+    def discover(self, q):
+        return [{"url": "https://ex.com/news", "title": "報道"}, {"url": "https://www.fda.gov/x", "title": "FDA approves X"},
+                {"url": "https://maker.example/pr.pdf", "title": "新薬X 承認取得のお知らせ"}]
+
+    def add_urls(self, urls):
+        VerifyNB.added += urls
+        return urls
+
+
+def fake_strata(prompt, cfg):
+    if "検索語" in prompt:
+        return [{"i": 0, "query": "FDA approves X"}]
+    return [{"i": 0, "primary": True}]   # 記事と同じサイト（ex.com）は除くので、残りは maker.example だけ
+
+
+note_weekly.strata_json = fake_strata
+ASKS.clear()
+r = note_weekly.make({**NWCFG, "verify": {"max_items": 1, "per_item": 2}}, dt.date(2026, 10, 24), dry_run=True,
+                     nb_factory=VerifyNB)
+assert VerifyNB.added == ["https://www.fda.gov/x", "https://maker.example/pr.pdf"], VerifyNB.added
+assert "一次情報: https://www.fda.gov/x" in ASKS[0]                  # NotebookLM への一覧に一次情報を添える
+t0 = r["doc"]["topics"][0]
+assert t0["url"] == "https://www.fda.gov/x" and t0["source"] == "FDA" and t0["verified"]   # 報道URLを一次情報に差し替え
+memo = "\n".join(r["memo"])
+assert "「新薬Xを承認」：出典が報道" not in memo and "裏どり「FDAが新薬Xを承認」：https://www.fda.gov/x" in memo
+print("✅ note_weekly verify")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500
