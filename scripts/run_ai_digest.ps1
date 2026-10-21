@@ -40,6 +40,7 @@ if ($base) {
 }
 
 $env:PYTHONIOENCODING = 'utf-8'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8    # read python's UTF-8 output as UTF-8 (not the ANSI code page)
 & $python src\ai_digest.py 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
 Log "exit code $LASTEXITCODE"
 exit $LASTEXITCODE
