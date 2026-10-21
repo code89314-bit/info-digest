@@ -25,6 +25,13 @@ DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 JA_DAY = dict(zip(DAYS, "月火水木金土日"))
 
 
+def color(value, default: int) -> int:
+    """config の色（"#RRGGBB" か数値）を Discord の色に。"""
+    if value is None or value == "":
+        return default
+    return value if isinstance(value, int) else int(str(value).lstrip("#"), 16)
+
+
 def now_jst() -> dt.datetime:
     return dt.datetime.utcfromtimestamp(time.time() + 9 * 3600)
 
@@ -58,10 +65,13 @@ def collect_into_archive(cfg: dict, webhook: str, title: str) -> None:
     hot = [p for p in picked if urgent.get("enabled") and p["tag"] in (urgent.get("tags") or [])
            and float(p.get("score", 0)) >= float(urgent.get("min_score", 4))]
     if hot:
-        content = f"⚠️ **{title}｜安全性情報（速報）**"
+        content = f"🚨 **{title}｜安全性情報（速報）**"
         if cfg.get("notice"):
             content += f"\n-# {cfg['notice'].strip()}"
-        post_discord(webhook, username=title, content=content, embeds=build_embeds(hot, get_tags(cfg)))
+        embeds = build_embeds(hot, get_tags(cfg), cfg.get("tag_style"))
+        for e in embeds:   # 速報は目立つ赤に
+            e["color"] = color(urgent.get("color"), 0xE53935)
+        post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, embeds=embeds)
         print(f"安全性情報を速報しました: {len(hot)} 件")
 
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 5000)
@@ -89,6 +99,7 @@ def make_episode(cfg: dict, day: str, webhook: str, title: str) -> None:
         print(f"{JA_DAY[day]}曜日は休み")
         return
     theme = ep.get("theme") or day
+    emoji = ep.get("emoji") or cfg.get("icon") or "💊"
     min_items = int((cfg.get("episode") or {}).get("min_items", 2))
     if len(items) < min_items:
         print(f"{JA_DAY[day]}曜「{theme}」は今週 {len(items)} 件のため作りません（週間まとめに任せます）")
@@ -122,22 +133,27 @@ def make_episode(cfg: dict, day: str, webhook: str, title: str) -> None:
             if notebook:
                 notebook.close()
             notebook = None
+    by = "NotebookLM" if notebook else "Strata"
     overview = overview or write_overview(items, ecfg)
-    embeds = build_embeds(items, get_tags(cfg))
+    embeds = build_embeds(items, get_tags(cfg), cfg.get("tag_style"))
     if overview:
-        embeds.insert(0, {"title": f"📋 今週の「{theme}」トピックス", "description": overview, "color": 0x5C6BC0})
-    content = f"{cfg.get('icon') or '💊'} **{title}｜{JA_DAY[day]}曜：{theme}**（直近1週間 {len(items)}件）"
+        since = now_jst().date() - dt.timedelta(days=int((cfg.get("episode") or {}).get("lookback_days", 7)))
+        embeds.insert(0, {"title": f"{emoji} 今週の「{theme}」トピックス", "description": overview,
+                          "color": color(ep.get("color"), 0x5C6BC0),
+                          "footer": {"text": f"{since:%m/%d}〜{now_jst():%m/%d} の記事 {len(items)}件から｜要約: {by}"}})
+    content = f"{emoji} **{title}｜{JA_DAY[day]}曜：{theme}**（直近1週間 {len(items)}件）"
     if cfg.get("notice"):
         content += f"\n-# {cfg['notice'].strip()}"
     try:
-        post_discord(webhook, username=title, content=content, embeds=embeds)
+        post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, embeds=embeds)
     except BaseException:
         if notebook:
             notebook.close()
         raise
     if pod.get("enabled"):
         import podcast_nlm
-        podcast_nlm.run(items, pod, webhook=webhook, username=title, notebook=notebook)
+        podcast_nlm.run(items, pod, webhook=webhook, username=title, notebook=notebook,
+                        avatar_url=cfg.get("avatar_url"))
 
 
 def main(argv: list[str]) -> None:

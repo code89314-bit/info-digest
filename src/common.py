@@ -72,7 +72,7 @@ def http_get(url: str, timeout: int = 30) -> requests.Response:
 
 
 def post_discord(webhook_env: str, content: str = "", embeds: list | None = None,
-                 username: str | None = None) -> None:
+                 username: str | None = None, avatar_url: str | None = None) -> None:
     """Discord Webhookに投稿。DRY_RUN=1 なら標準出力に表示するだけ。
 
     文字数上限(本文2000字・1メッセージ10embed)を超える場合は分割して送る。
@@ -123,11 +123,14 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
             continue
         if username:
             p["username"] = username
+        if avatar_url:
+            p["avatar_url"] = avatar_url
         p["allowed_mentions"] = {"parse": []}
         _send(url, p)
 
 
-def post_discord_file(webhook_env: str, path: Path, content: str = "", username: str | None = None) -> None:
+def post_discord_file(webhook_env: str, path: Path, content: str = "", username: str | None = None,
+                      avatar_url: str | None = None) -> None:
     """ファイル（podcast の mp3 など）を1つ添付して投稿。DRY_RUN=1 なら表示するだけ。
 
     Webhook の添付上限はサーバーのブースト無しで 10MB。超えると 413 になる。
@@ -143,6 +146,8 @@ def post_discord_file(webhook_env: str, path: Path, content: str = "", username:
     payload = {"content": content, "allowed_mentions": {"parse": []}}
     if username:
         payload["username"] = username
+    if avatar_url:
+        payload["avatar_url"] = avatar_url
     for attempt in range(4):
         with open(path, "rb") as fh:
             r = requests.post(url, data={"payload_json": json.dumps(payload, ensure_ascii=False)},

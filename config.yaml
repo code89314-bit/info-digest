@@ -166,6 +166,8 @@ ai_global:
 onco:
   title: がん薬物療法ニュース
   icon: 💊
+  # Discord に表示するアイコン（assets/onco.png。作り直すときは scripts/make_icons.py）
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png
   # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
   webhook_env: DISCORD_WEBHOOK_ONCO
   # 投稿の冒頭に小さく表示する注意書き
@@ -181,12 +183,12 @@ onco:
 
   # ---- 曜日ごとのテーマ（tags はアーカイブの分類。空なら全部 = 週間まとめ）。書いていない曜日は休み ----
   schedule:
-    mon: {theme: 新薬, tags: [新薬・承認], instructions: 承認・適応追加・申請・部会審議を、国内で使えるようになる時期と位置づけを中心に。}
-    tue: {theme: 治療ストラテジー, tags: [治療ストラテジー], instructions: 標準治療や治療の順番がどう変わりうるか、根拠となる試験の結果と限界を中心に。}
-    wed: {theme: ガイドライン, tags: [ガイドライン], instructions: どの学会のどの版で何が変わったか、推奨度と現場で変えるべきことを中心に。}
-    thu: {theme: 治験, tags: [治験], instructions: 国内で進行中・開始・結果が出た治験を、対象患者と参加の目安が分かるように。}
-    fri: {theme: 安全性・行政, tags: [安全性情報, 行政・供給], instructions: 添付文書改訂・副作用・供給、薬事審議会・薬価収載などの行政の動きを、現場で必要な対応を中心に。}
-    sat: {theme: 週間まとめ, tags: [], max_items: 20, format: deep-dive, instructions: 1週間の主な動きを、新薬・治療・ガイドライン・治験・安全性の順にふり返り、最後に今週のポイントを3つにまとめる。}
+    mon: {theme: 新薬, emoji: '💊', color: '#43A047', tags: [新薬・承認], instructions: 承認・適応追加・申請・部会審議を、国内で使えるようになる時期と位置づけを中心に。}
+    tue: {theme: 治療ストラテジー, emoji: '🧭', color: '#1E88E5', tags: [治療ストラテジー], instructions: 標準治療や治療の順番がどう変わりうるか、根拠となる試験の結果と限界を中心に。}
+    wed: {theme: ガイドライン, emoji: '📘', color: '#3949AB', tags: [ガイドライン], instructions: どの学会のどの版で何が変わったか、推奨度と現場で変えるべきことを中心に。}
+    thu: {theme: 治験, emoji: '🧪', color: '#00897B', tags: [治験], instructions: 国内で進行中・開始・結果が出た治験を、対象患者と参加の目安が分かるように。}
+    fri: {theme: 安全性・行政, emoji: '🛡️', color: '#F4511E', tags: [安全性情報, 行政・供給], instructions: 添付文書改訂・副作用・供給、薬事審議会・薬価収載などの行政の動きを、現場で必要な対応を中心に。}
+    sat: {theme: 週間まとめ, emoji: '🗓️', color: '#8E24AA', tags: [], max_items: 20, format: deep-dive, instructions: 1週間の主な動きを、新薬・治療・ガイドライン・治験・安全性の順にふり返り、最後に今週のポイントを3つにまとめる。}
   episode:
     # 直近何日分のアーカイブを使うか
     lookback_days: 7
@@ -199,6 +201,7 @@ onco:
     enabled: true
     tags: [安全性情報]
     min_score: 4
+    color: '#D50000'
 
   # ---- 何を拾うか（LLMへの指示。自由に書き換えてOK） ----
   focus: |
@@ -218,6 +221,15 @@ onco:
     - 免疫チェックポイント阻害薬・抗体薬物複合体（ADC）・分子標的薬
   # 見出しの分類（= 曜日テーマの振り分け先）
   tags: [新薬・承認, 治療ストラテジー, ガイドライン, 治験, 安全性情報, 行政・供給, その他]
+  # 分類ごとの見出しの絵文字と色（曜日テーマの色とそろえる）
+  tag_style:
+    新薬・承認: {emoji: '💊', color: '#43A047'}
+    治療ストラテジー: {emoji: '🧭', color: '#1E88E5'}
+    ガイドライン: {emoji: '📘', color: '#3949AB'}
+    治験: {emoji: '🧪', color: '#00897B'}
+    安全性情報: {emoji: '⚠️', color: '#E53935'}
+    行政・供給: {emoji: '🏛️', color: '#F4511E'}
+    その他: {emoji: '📎', color: '#90A4AE'}
   # LLMが使えないときの絞り込みキーワード
   fallback_keywords: [がん, 癌, 腫瘍, 抗悪性, 白血病, リンパ腫, 骨髄腫, 肉腫, cancer, oncolog, tumor, carcinoma, lymphoma, leukemia, myeloma]
 
@@ -302,6 +314,7 @@ onco:
 learn:
   title: がん薬物療法 学習
   icon: 📚
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/learn.png
   webhook_env: DISCORD_WEBHOOK_ONCO
   notice: NotebookLM がウェブ上の資料から自動で作成しています。誤りを含む可能性があります。判断は添付文書・ガイドライン原文で確認してください。
   audience: 病院薬剤師・がん専門薬剤師

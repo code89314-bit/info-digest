@@ -440,8 +440,10 @@ NCFG = {"ai_digest": GCFG["ai_digest"],
         "onco": {"title": "がん", "webhook_env": "DISCORD_WEBHOOK_ONCO", "notice": "原文で確認",
                  "sources": [{"name": "PMDA", "url": "https://ex.com/rss"}],
                  "tags": ["新薬・承認", "治療ストラテジー", "安全性情報", "その他"],
-                 "urgent": {"enabled": True, "tags": ["安全性情報"], "min_score": 4},
-                 "schedule": {"mon": {"theme": "新薬", "tags": ["新薬・承認"]},
+                 "urgent": {"enabled": True, "tags": ["安全性情報"], "min_score": 4, "color": "#D50000"},
+                 "avatar_url": "https://raw.githubusercontent.com/x/y/main/assets/onco.png",
+                 "tag_style": {"新薬・承認": {"emoji": "💊", "color": "#43A047"}},
+                 "schedule": {"mon": {"theme": "新薬", "tags": ["新薬・承認"], "emoji": "💊", "color": "#43A047"},
                               "tue": {"theme": "治療ストラテジー", "tags": ["治療ストラテジー"]},
                               "sat": {"theme": "週間まとめ", "tags": []}},
                  "episode": {"min_items": 2}, "overview": {"enabled": True, "audience": "薬剤師"}}}
@@ -462,6 +464,7 @@ onco_news.collect_into_archive(onco_news.ai_digest.section_config("onco"), "DISC
 arch = common.load_state("onco_archive")["items"]
 assert {a["id"] for a in arch} == {"old", "a", "b"}, arch          # 21日より古いものは消える
 assert len(NPOST) == 1 and "安全性情報（速報）" in NPOST[0][1]["content"]   # score 5 の安全性情報だけ即日
+assert NPOST[0][1]["embeds"][0]["color"] == 0xD50000   # 速報は赤
 assert "重大な副作用" in NPOST[0][1]["embeds"][0]["description"] and "新薬A" not in NPOST[0][1]["embeds"][0]["description"]
 ep, its = onco_news.episode_items(onco_news.ai_digest.section_config("onco"), "mon")
 assert ep["theme"] == "新薬" and [i["id"] for i in its] == ["old", "a"]   # スコア順、テーマの分類だけ
@@ -469,7 +472,9 @@ NPOST.clear()
 ai_digest.requests.post = lambda *a, **k: FakeChat("**肺がん**\n- 今週の新薬")
 onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "mon", "DISCORD_WEBHOOK_ONCO", "がん")
 k = NPOST[0][1]
-assert "月曜：新薬" in k["content"] and k["embeds"][0]["title"] == "📋 今週の「新薬」トピックス"
+assert "💊 **がん｜月曜：新薬**" in k["content"] and k["embeds"][0]["title"] == "💊 今週の「新薬」トピックス"
+assert k["embeds"][0]["color"] == 0x43A047 and "要約: Strata" in k["embeds"][0]["footer"]["text"]
+assert k["embeds"][1]["title"] == "💊 新薬・承認" and k["avatar_url"].endswith("/assets/onco.png")   # 分類の絵文字とアイコン
 NPOST.clear()
 onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "tue", "DISCORD_WEBHOOK_ONCO", "がん")
 onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "sun", "DISCORD_WEBHOOK_ONCO", "がん")

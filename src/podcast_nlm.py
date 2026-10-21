@@ -251,25 +251,27 @@ def compress(src: Path, dst: Path, max_mb: float, ffmpeg: str) -> float:
     return secs
 
 
-def run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None = None) -> None:
+def run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None = None,
+        avatar_url: str | None = None) -> None:
     """podcast を作って添付する。notebook を渡せば要約に使ったノートをそのまま使う（最後に削除）。
 
     どこで失敗してもダイジェスト本体には影響させない。
     """
     try:
-        _run(picked, pod, webhook=webhook, username=username, notebook=notebook)
+        _run(picked, pod, webhook=webhook, username=username, notebook=notebook, avatar_url=avatar_url)
     finally:
         if notebook:
             notebook.close()
 
 
-def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None) -> None:
+def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None,
+         avatar_url: str | None = None) -> None:
     if os.environ.get("DRY_RUN") == "1":
         print(f"---- DRY_RUN (podcast) ---- {len(picked)}件から NotebookLM で音声を作る予定（実行はしない）")
         return
     limit = int(pod.get("daily_limit", 3))
     if used_today(pod) >= limit:
-        post_discord(webhook, username=username,
+        post_discord(webhook, username=username, avatar_url=avatar_url,
                      content=f"🎧 今日の podcast は作りませんでした（NotebookLM の音声は1日{limit}本まで。上限に達しています）")
         return
     out_dir = ROOT / (pod.get("out_dir") or ".local/podcasts")
@@ -289,7 +291,7 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
         else:
             notebook.audio(raw)
         secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
-        post_discord_file(webhook, small, username=username,
+        post_discord_file(webhook, small, username=username, avatar_url=avatar_url,
                           content=f"🎧 **{pod.get('label') or '今日のニュース podcast'}**"
                                   f"（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")
         print(f"podcast を投稿しました: {small.name}")
@@ -297,4 +299,4 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
             old.unlink(missing_ok=True)
     except Exception as ex:   # noqa: BLE001  音声は「おまけ」。失敗理由だけ伝える
         print("podcast 失敗:", ex)
-        post_discord(webhook, username=username, content=f"🎧 今日の podcast は作れませんでした: {str(ex)[:300]}")
+        post_discord(webhook, username=username, avatar_url=avatar_url, content=f"🎧 今日の podcast は作れませんでした: {str(ex)[:300]}")

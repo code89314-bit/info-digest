@@ -370,11 +370,16 @@ def select_by_keywords(items: list[dict], cfg: dict) -> list[dict]:
             for it in hits[: cfg.get("max_items", 12)]]
 
 
-def build_embeds(picked: list[dict], tags: list[str] | None = None) -> list[dict]:
+def build_embeds(picked: list[dict], tags: list[str] | None = None, style: dict | None = None) -> list[dict]:
+    """分類ごとに embed を作る。style（config の tag_style）で分類ごとの絵文字・色を指定できる。"""
     tags = tags or DEFAULT_TAGS
+    style = style or {}
     embeds = []
     for n, tag in enumerate(tags):
         color = PALETTE[n % len(PALETTE)] if tag != "その他" else 0x90A4AE
+        st = style.get(tag) or {}
+        color = int(str(st["color"]).lstrip("#"), 16) if st.get("color") else color
+        label = f"{st['emoji']} {tag}" if st.get("emoji") else tag
         group = [p for p in picked if p["tag"] == tag]
         if not group:
             continue
@@ -386,11 +391,11 @@ def build_embeds(picked: list[dict], tags: list[str] | None = None) -> list[dict
                 entry += f"{p['summary_ja']}\n"
             entry += f"_{p['source']}_\n\n"
             if len(body) + len(entry) > 3800:
-                embeds.append({"title": f"{tag}（{part}）", "description": body.strip(), "color": color})
+                embeds.append({"title": f"{label}（{part}）", "description": body.strip(), "color": color})
                 body, part = "", part + 1
             body += entry
         if body:
-            embeds.append({"title": tag if part == 1 else f"{tag}（{part}）",
+            embeds.append({"title": label if part == 1 else f"{label}（{part}）",
                            "description": body.strip(), "color": color})
     return embeds
 
@@ -538,7 +543,7 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                     if notebook:
                         notebook.close()
                     notebook = None
-            embeds = build_embeds(picked, get_tags(cfg))
+            embeds = build_embeds(picked, get_tags(cfg), cfg.get("tag_style"))
             if (cfg.get("overview") or {}).get("enabled"):
                 overview = overview or write_overview(picked, cfg)
                 if overview:
@@ -547,7 +552,7 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
             try:
-                post_discord(webhook, username=title, content=content, embeds=embeds)
+                post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, embeds=embeds)
             except BaseException:
                 if notebook:   # 投稿に失敗したらノートを残さない（次回また作り直す）
                     notebook.close()
@@ -560,7 +565,8 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
 
     if pod.get("enabled") and len(picked) >= int(pod.get("min_items", 1)):
         import podcast_nlm   # NotebookLM を使うときだけ読み込む
-        podcast_nlm.run(picked, pod, webhook=webhook, username=title, notebook=notebook)
+        podcast_nlm.run(picked, pod, webhook=webhook, username=title, notebook=notebook,
+                        avatar_url=cfg.get("avatar_url"))
     elif notebook:
         notebook.close()
 

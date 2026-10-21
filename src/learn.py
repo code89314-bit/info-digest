@@ -131,13 +131,13 @@ def episode(cfg: dict, topic: dict, webhook: str, title: str) -> None:
         content = f"{cfg.get('icon') or '📚'} **{title}｜{topic['category']}**\n**{topic['title']}**"
         if cfg.get("notice"):
             content += f"\n-# {cfg['notice'].strip()}"
-        post_discord(webhook, username=title, content=content,
+        post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content,
                      embeds=[{"title": "📝 要点", "description": summary[:3900], "color": 0x8D6E63},
                              {"title": "🎯 掘り下げる核心", "description": topic["core"][:1000], "color": 0xA1887F}])
     except BaseException:
         nb.close()
         raise
-    podcast_nlm.run([topic], pod, webhook=webhook, username=title, notebook=nb)
+    podcast_nlm.run([topic], pod, webhook=webhook, username=title, notebook=nb, avatar_url=cfg.get("avatar_url"))
 
 
 def main(argv: list[str]) -> None:
@@ -168,7 +168,7 @@ def main(argv: list[str]) -> None:
     except Exception as ex:   # noqa: BLE001
         print("学習番組を作れませんでした:", ex)
         if os.environ.get("DRY_RUN") != "1":
-            post_discord(webhook, username=title, content=f"📚 今日の学習番組は作れませんでした: {str(ex)[:300]}")
+            post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=f"📚 今日の学習番組は作れませんでした: {str(ex)[:300]}")
         if "見つかりませんでした" in str(ex):   # 資料が無いテーマは捨てて次回は別のものを
             state["done"].append(topic["id"])
             save_state(SECTION, state)
