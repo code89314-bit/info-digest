@@ -15,7 +15,9 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
+from urllib.parse import urlparse
 
 import yaml
 
@@ -41,13 +43,17 @@ TOPICS_PROMPT = """{digest}
 - conclusion / before / next: それぞれ1〜2文。1文40字以内。
 - data: 試験名・対象・主要評価項目の数値（任意、1行）。
 - source: 出典の表記（機関名・論文の書誌）。url: 一次情報のURL（無ければ記事のURL）。
+- date: 出来事（承認・発表・改訂など）の日付。YYYY-MM-DD。資料に無ければ ""。
 - i: もとにした記事の番号（数値。複数なら最も一次情報に近い1つ）。
+
+書き方の見本（この文体・文末で書く）:
+{example}
 
 記事の一覧（番号: [分類] 見出し — URL）:
 {items}
 
 JSONのみを出力:
-{{"topics": [{{"i": 0, "theme": "テーマ名", "heading": "...", "conclusion": "...", "before": "...", "next": "...", "data": "...", "source": "...", "url": "..."}}]}}"""
+{{"topics": [{{"i": 0, "theme": "テーマ名", "date": "YYYY-MM-DD", "heading": "...", "conclusion": "...", "before": "...", "next": "...", "data": "...", "source": "...", "url": "..."}}]}}"""
 
 LEAD_PROMPT = """{digest}
 以下は今週の号に載せるトピックの小見出しと結論です。
@@ -159,6 +165,7 @@ def write_topics(nb, cfg: dict, style: dict, items: list[dict], start: dt.date, 
         theme_of = {i: th for th, ids in batch for i in ids}
         lines = [f"[{i}] [{th}] {items[i]['title_ja']} — {items[i]['link']}" for i, th in theme_of.items()]
         prompt = TOPICS_PROMPT.format(digest=(style.get("prompt_digest") or "").strip(), rules=rules,
+                                      example=((style.get("topic_block") or {}).get("format_example") or "").strip(),
                                       start=md_day(start, "%-m/%-d"), end=md_day(end, "%-m/%-d"),
                                       themes="」「".join(th for th, _ in batch),
                                       per_theme=cfg.get("max_topics_per_theme", 4), items="\n".join(lines))
@@ -176,7 +183,7 @@ def write_topics(nb, cfg: dict, style: dict, items: list[dict], start: dt.date, 
                 th = next((n for n, ids in batch if i in ids), names[0])
             art = items[i] if i is not None and 0 <= i < len(items) else {}
             topic = {"theme": th, **{k: clean(t.get(k)) for k, _ in LABELS}, "heading": clean(t.get("heading")),
-                     "url": clean(t.get("url")) or art.get("link", "")}
+                     "url": clean(t.get("url")) or art.get("link", ""), "date": clean(t.get("date"))}
             if not topic["source"] and art:
                 topic["source"] = art.get("source", "")
             topics.append(topic)
@@ -212,11 +219,14 @@ def hashtags(style: dict, lead: dict) -> list[str]:
     return list(dict.fromkeys(t.replace(" ", "") for t in tags if t))[:15]
 
 
-def build(style: dict, lead: dict, topics: list[dict], start: dt.date, end: dt.date) -> dict:
-    """号の中身（md と html の共通の材料）。"""
+def build(style: dict, lead: dict, topics: list[dict], start: dt.date, end: dt.date,
+          audio: str | None = None) -> dict:
+    """号の中身（md と html の共通の材料）。audio は貼る音声のファイル名（無ければ音声の節を出さない）。"""
     links = section(style, "links")
     after = section(style, "afterword")
-    return {"title": title_of(style, lead, start, end), "greeting": greeting(style, start, end),
+    pod = style.get("podcast") or {}
+    return {"audio": audio, "audio_heading": pod.get("heading") or "音声版",
+            "audio_body": (pod.get("body") or "").strip(),"title": title_of(style, lead, start, end), "greeting": greeting(style, start, end),
             "three_lines": lead["three_lines"], "topics": topics,
             "links_heading": links.get("heading") or "一次資料リンク（まとめ）",
             "afterword_heading": after.get("heading") or "編集後記",
@@ -250,7 +260,11 @@ def to_markdown(doc: dict, memo: list[str]) -> str:
             md.append("")
     md += [f"## {doc['links_heading']}", ""]
     md += [f"- {t['heading']}：{t['url']}" for t in doc["topics"] if t["url"]]
-    md += ["", f"## {doc['afterword_heading']}", "", doc["afterword"], "", doc["footer"].replace("\n", "  \n"), "",
+    md += ["", f"## {doc['afterword_heading']}", "", doc["afterword"], ""]
+    if doc["audio"]:
+        md += [f"## {doc['audio_heading']}", "", doc["audio_body"].replace("\n", "  \n"), "",
+               f"※ここに音声ファイル「{doc['audio']}」を埋め込み（note の「＋」→ 音声）", ""]
+    md += [doc["footer"].replace("\n", "  \n"), "",
            " ".join(f"#{h}" for h in doc["hashtags"])]
     if memo:
         md += ["", "---", "", "## 確認メモ（公開前に削除）", ""] + [f"- {m}" for m in memo]
@@ -278,8 +292,12 @@ def to_html(doc: dict, memo: list[str]) -> str:
     b.append(f"<h2>{e(doc['links_heading'])}</h2>")
     b.append("<ul>" + "".join(f'<li>{e(t["heading"])}：<a href="{e(t["url"])}">{e(t["url"])}</a></li>'
                               for t in doc["topics"] if t["url"]) + "</ul>")
-    b += [f"<h2>{e(doc['afterword_heading'])}</h2>", f"<p>{e(doc['afterword'])}</p>",
-          "<p>" + "<br>".join(e(x) for x in doc["footer"].splitlines()) + "</p>",
+    b += [f"<h2>{e(doc['afterword_heading'])}</h2>", f"<p>{e(doc['afterword'])}</p>"]
+    if doc["audio"]:
+        b += [f"<h2>{e(doc['audio_heading'])}</h2>",
+              "<p>" + "<br>".join(e(x) for x in doc["audio_body"].splitlines()) + "</p>",
+              f"<p>※ここに音声ファイル「{e(doc['audio'])}」を埋め込み（note の「＋」→ 音声）</p>"]
+    b += ["<p>" + "<br>".join(e(x) for x in doc["footer"].splitlines()) + "</p>",
           "<p>" + " ".join(e(f"#{h}") for h in doc["hashtags"]) + "</p>"]
     if memo:
         b += ['<hr><div style="background:#fff3cd;padding:8px"><p><strong>確認メモ（公開前に削除）</strong></p><ul>'
@@ -297,7 +315,18 @@ def sentences(text: str) -> list[str]:
     return [s + "。" for s in re.split(r"。", text) if s.strip()]
 
 
-def check(doc: dict, style: dict) -> tuple[list[str], list[tuple[str, str]]]:
+def mentions_date(text: str, d: dt.date) -> bool:
+    return any(x in text for x in (f"{d.month}/{d.day}", f"{d.month}月{d.day}日"))
+
+
+# 一次情報とみなすドメイン（config の primary_domains で置き換えられる）。これ以外だけが出典なら「報道のみ」として確認メモに出す
+PRIMARY = ["pmda.go.jp", "mhlw.go.jp", "fda.gov", "ema.europa.eu", "cancer.gov", "nih.gov", "doi.org", "jsco.or.jp",
+           "jsmo.or.jp", "minds.jcqhc.or.jp", "nejm.org", "thelancet.com", "ascopubs.org", "annalsofoncology.org",
+           "jamanetwork.com", "nature.com", "clinicaltrials.gov", "jrct.niph.go.jp"]
+
+
+def check(doc: dict, style: dict, start: dt.date | None = None,
+          primary: list[str] | None = None) -> tuple[list[str], list[tuple[str, str]]]:
     """確認メモと、40字を超える文の一覧 [(場所, 文)]。"""
     memo, long = [], []
     max_chars = int((style.get("sentences") or {}).get("max_chars", 40))
@@ -326,6 +355,16 @@ def check(doc: dict, style: dict) -> tuple[list[str], list[tuple[str, str]]]:
             memo.append(f"「{t['heading']}」：FDA/EMA の承認に「海外」の表記がありません")
         if re.search(r"FDA|EMA", t["heading"] + t["conclusion"]) and not t["heading"].startswith("【海外】"):
             memo.append(f"「{t['heading']}」：海外の承認なのに小見出しに【海外】がありません")
+        try:
+            day = dt.date.fromisoformat(t.get("date") or "")
+        except ValueError:
+            day = None
+        if start and day and day < start and not mentions_date(t["heading"] + t["conclusion"], day):
+            memo.append(f"「{t['heading']}」：今週より前の出来事（{day.month}/{day.day}）なのに、結論に日付がありません")
+        host = urlparse(t["url"]).netloc.lower()
+        is_primary = any(host == d or host.endswith("." + d) for d in (primary or PRIMARY))
+        if host and not is_primary and "（報道）" not in t["conclusion"]:
+            memo.append(f"「{t['heading']}」：出典が報道（{host}）だけです。一次情報を確認し、無ければ結論の文末に「（報道）」")
     for where, s in long:
         memo.append(f"{where}：{max_chars}字超（{len(s)}字）「{s}」")
     return memo, long
@@ -349,6 +388,29 @@ def split_suggestions(long: list[tuple[str, str]], cfg: dict) -> dict[int, str]:
         except (KeyError, ValueError, TypeError):
             continue
     return out
+
+
+def find_audio(cfg: dict, style: dict, start: dt.date, end: dt.date, dest):
+    """今週の onco の podcast（圧縮前の mp3。土曜の週間まとめがあればそれ）を下書きの横にコピーする。"""
+    if not (style.get("podcast") or {}).get("enabled"):
+        return None
+    pod = (load_config().get("onco") or {}).get("podcast") or {}
+    folder = ROOT / (pod.get("out_dir") or ".local/podcasts")
+    found = []
+    for f in folder.glob(f"{pod.get('file_prefix', 'onco')}-*.mp3"):
+        m = re.match(r".*-(\d{8})-\d{4}\.mp3$", f.name)     # -discord.mp3（圧縮版）は除く
+        if m:
+            day = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
+            if start <= day <= end:
+                found.append((day.weekday() == 5, f.name, f))    # 土曜の回を優先、次に新しいもの
+    if not found:
+        return None
+    src = max(found)[2]
+    if src.stat().st_size > float(cfg.get("audio_max_mb", 100)) * 1e6:   # note の音声埋め込みは100MBまで
+        print(f"音声が note の上限を超えています: {src.name}")
+        return None
+    shutil.copyfile(src, dest)
+    return dest
 
 
 def notebook_settings(cfg: dict) -> dict:
@@ -375,19 +437,22 @@ def make(cfg: dict, end: dt.date, *, dry_run: bool, nb_factory=None) -> dict | N
         lead = write_lead(nb, style, topics)
     finally:
         nb.close()
-    doc = build(style, lead, topics, start, end)
-    memo, long = check(doc, style)
-    for i, s in split_suggestions(long, cfg).items():
-        memo.append(f"分割案：「{long[i][1]}」→「{s}」")
     out_dir = ROOT / (cfg.get("out_dir") or ".local/note_drafts")
     out_dir.mkdir(parents=True, exist_ok=True)
     y, w, _ = end.isocalendar()
+    audio = find_audio(cfg, style, start, end, out_dir / f"{y}-W{w:02d}.mp3")
+    doc = build(style, lead, topics, start, end, audio.name if audio else None)
+    memo, long = check(doc, style, start, cfg.get("primary_domains"))
+    for i, s in split_suggestions(long, cfg).items():
+        memo.append(f"分割案：「{long[i][1]}」→「{s}」")
     md_path, html_path = out_dir / f"{y}-W{w:02d}.md", out_dir / f"{y}-W{w:02d}.html"
     md_path.write_text(to_markdown(doc, memo), encoding="utf-8")
     html_path.write_text(to_html(doc, memo), encoding="utf-8")
     print(f"下書きを保存しました: {md_path}\n                    {html_path}\nトピック {len(topics)} 件・確認メモ {len(memo)} 件")
     content = (f"📝 **note 下書き：{doc['title']}**\n**今週の3行**\n" + "\n".join(f"- {x}" for x in doc["three_lines"])
-               + f"\n-# トピック {len(topics)}件・確認メモ {len(memo)}件。html をブラウザで開き、全選択コピー → note に貼り付け")
+               + f"\n-# トピック {len(topics)}件・確認メモ {len(memo)}件。html をブラウザで開き、全選択コピー → note に貼り付け"
+               + (f"\n-# 音声: {audio}（note の音声埋め込みで貼る）" if audio else
+                  "\n-# 今週の podcast は見つかりませんでした（音声の節は省きました）"))
     if dry_run:
         print("---- dry-run（Discord には送りません）----\n" + content)
     else:

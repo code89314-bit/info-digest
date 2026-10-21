@@ -544,7 +544,7 @@ class FakeNB:
         if "headline_1" in q:
             return json.dumps({"headline_1": "新薬X", "headline_2": "GL改訂", "three_lines": ["一。", "二。", "三。"],
                                "hashtags": ["#新薬X", "乳がん"]}, ensure_ascii=False)
-        return ('{"topics": [{"i": 0, "theme": "新薬・承認", "heading": "新薬Xを承認", "conclusion": "FDAが新薬Xを承認しました。",'
+        return ('{"topics": [{"i": 0, "theme": "新薬・承認", "heading": "新薬Xを承認", "conclusion": "FDAが新薬Xを承認しました。", "date": "2026-08-26",'
                 ' "before": "記載なし", "next": "", "data": "OS中央値 12.3カ月", "source": "", "url": ""},'
                 ' {"i": 2, "theme": "ガイドライン", "heading": "GL改訂", "conclusion": "' + "あ" * 45 + '。画期的です！",'
                 ' "before": "", "next": "", "data": "", "source": "学会", "url": "https://ex.com/gl"}]}')
@@ -555,6 +555,7 @@ class FakeNB:
 
 NWCFG = {"style_file": "style/jibun_yakkyoku.yaml", "split_long_sentences": False, "themes_per_ask": 2,
          "out_dir": str(TMP / "drafts")}
+note_weekly.find_audio = lambda *a: None   # 本物の podcast フォルダを見ない
 r = note_weekly.make(NWCFG, dt.date(2026, 10, 24), dry_run=True, nb_factory=FakeNB)
 assert len(ASKS) == 4 and ASKS[-1] == "closed"                       # テーマ3つ→2回＋見出し1回、最後にノート削除
 assert "新薬・承認」「ガイドライン" in ASKS[0] and "古い" not in ASKS[0]   # style の順に2テーマずつ、7日より前は使わない
@@ -565,6 +566,11 @@ assert "[S](https://ex.com/1)" in md                                  # 出典�
 assert "#新薬X" in md and "##新薬X" not in md and "AIは書かない" not in md
 memo = "\n".join(r["memo"])
 assert "「海外」の表記がありません" in memo and "【海外】がありません" in memo
+assert "今週より前の出来事（8/26）" in memo and "出典が報道（ex.com）" in memo
+assert "音声版" not in md and "音声" not in r["html"].read_text(encoding="utf-8")   # podcast が無ければ節ごと省く
+d2 = note_weekly.build(note_weekly.load_style(NWCFG), {"headline_1": "a", "headline_2": "b", "three_lines": [], "hashtags": []},
+                       [], dt.date(2026, 10, 18), dt.date(2026, 10, 24), "2026-W43.mp3")
+assert "「2026-W43.mp3」を埋め込み" in note_weekly.to_markdown(d2, [])
 assert "使わない語「画期的」" in memo and "感嘆符" in memo and "40字超" in memo
 assert "<h2>ガイドライン</h2>" in r["html"].read_text(encoding="utf-8")
 print("✅ note_weekly")
