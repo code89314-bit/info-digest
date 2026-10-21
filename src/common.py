@@ -8,7 +8,26 @@ import requests
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE_DIR = ROOT / "state"
+
+
+def load_dotenv(path: Path = ROOT / ".env") -> None:
+    """自宅サーバーで動かすとき用: リポジトリ直下の .env（KEY=VALUE の行）を環境変数に読み込む。
+
+    既に設定されている環境変数は上書きしない。.env は .gitignore 済み（Webhook URL 等をコミットしないため）。
+    """
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+load_dotenv()
+# 既読管理の保存先。INFO_DIGEST_STATE_DIR で変えられる（自宅サーバーではリポジトリ外の state を使う）
+STATE_DIR = Path(os.environ.get("INFO_DIGEST_STATE_DIR") or ROOT / "state")
 UA = {"User-Agent": "info-digest/1.0 (+https://github.com/)"}
 
 
@@ -26,7 +45,7 @@ def load_state(name: str) -> dict:
 
 
 def save_state(name: str, state: dict) -> None:
-    STATE_DIR.mkdir(exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
     p = STATE_DIR / f"{name}.json"
     with open(p, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=1, sort_keys=True)
@@ -60,7 +79,7 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
 
     url = os.environ.get(webhook_env)
     if not url:
-        raise SystemExit(f"環境変数 {webhook_env} が未設定です（GitHubのSecretsに登録してください）")
+        raise SystemExit(f"環境変数 {webhook_env} が未設定です（GitHubのSecrets、自宅サーバーでは .env に登録してください）")
 
     # embedの説明文は4096字まで
     for e in embeds:

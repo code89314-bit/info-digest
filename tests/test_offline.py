@@ -158,6 +158,97 @@ for e in ai_digest.build_embeds(picked, ai_digest.get_tags(cfg["ai_digest"])):
     print(e["title"], "|", e["description"])
 print("✅ ai_digest")
 
+# ---------- ローカルLLM（openai_compat）経路 ----------
+import json  # noqa: E402
+
+
+class FakeChat:
+    def __init__(self, content, status=200):
+        self.status_code = status
+        self._content = content
+        self.text = content if status >= 400 else ""
+
+    def json(self):
+        return {"choices": [{"message": {"content": self._content}}]}
+
+
+def chat_reply(items):
+    return json.dumps({"items": items}, ensure_ascii=False)
+
+
+CANDS = [{"id": f"x{n}", "title": f"記事{n}", "link": f"https://ex.com/{n}", "summary": "本" * 500,
+          "source": "Zenn"} for n in range(5)]
+LCFG = {"tags": ["ローカルLLM", "その他"], "max_items": 3,
+        "llm": {"provider": "openai_compat", "base_url": "http://llm.local/v1/", "model": "m",
+                "api_key_env": "LOCAL_LLM_API_KEY", "batch_size": 2, "summary_chars": 200,
+                "extra_body": {"reasoning_budget_tokens": 1024}}}
+os.environ["LOCAL_LLM_API_KEY"] = "local-key"
+CALLS = []
+REPLIES = [
+    # バッチ1（候補0,1）: <think>付き＋範囲外の番号＋非整数の番号
+    FakeChat("<think>考え中 {\"items\": []}</think>" + chat_reply(
+        [{"i": 1, "title_ja": "記事1の見出し", "summary_ja": "要約1", "tag": "ローカルLLM", "score": 2},
+         {"i": 9, "title_ja": "範囲外"}, {"i": "x", "title_ja": "非整数"}])),
+    # バッチ2（候補2,3）: 1回目は解釈不能 → 再試行で成功。同じ見出しの重複あり
+    FakeChat("すみません、JSONが書けませんでした"),
+    FakeChat(chat_reply([{"i": 0, "title_ja": "記事2の見出し", "summary_ja": "要約2", "tag": "未知のタグ", "score": 5},
+                         {"i": 1, "title_ja": "記事1の見出し", "summary_ja": "重複", "tag": "ローカルLLM", "score": 4}])),
+    # バッチ3（候補4）: response_format 非対応のサーバー → 外して再送
+    FakeChat("response_format is not supported", status=400),
+    FakeChat(chat_reply([{"i": 0, "title_ja": "記事4の見出し", "summary_ja": "要約4", "tag": "ローカルLLM", "score": 3}])),
+]
+
+
+def fake_chat_post(url, headers=None, json=None, timeout=None):
+    CALLS.append({"url": url, "headers": headers, "body": dict(json)})
+    return REPLIES[len(CALLS) - 1]
+
+
+ai_digest.requests.post = fake_chat_post
+picked = ai_digest.select_with_llm(CANDS, LCFG)
+assert CALLS[0]["url"] == "http://llm.local/v1/chat/completions", CALLS[0]["url"]
+assert CALLS[0]["headers"]["Authorization"] == "Bearer local-key"
+assert CALLS[0]["body"]["model"] == "m" and CALLS[0]["body"]["response_format"] == {"type": "json_object"}
+assert CALLS[0]["body"]["reasoning_budget_tokens"] == 1024
+prompt0 = CALLS[0]["body"]["messages"][0]["content"]
+assert "[0] (Zenn) 記事0" in prompt0 and "[1] (Zenn) 記事1" in prompt0 and "記事2" not in prompt0  # 2件ずつ
+assert "本" * 200 in prompt0 and "本" * 201 not in prompt0  # 本文は200字まで
+assert "response_format" in CALLS[3]["body"] and "response_format" not in CALLS[4]["body"]  # 400 → 外して再送
+assert len(CALLS) == 5  # バッチ1:1回 + バッチ2:再試行で2回 + バッチ3:再送で2回
+# スコア順（5,4,3）、同じ見出しはスコアの高い方だけ残す（候補1は落ちる）、未知のタグは「その他」
+assert [p["link"] for p in picked] == ["https://ex.com/2", "https://ex.com/3", "https://ex.com/4"], picked
+assert picked[0]["tag"] == "その他" and picked[1]["summary_ja"] == "重複"
+LCFG["max_items"] = 2
+CALLS.clear()
+assert len(ai_digest.select_with_llm(CANDS, LCFG)) == 2  # 件数上限
+LCFG["max_items"] = 3
+
+
+# サーバーが落ちている → None（main() はキーワード一致に落ちる）
+def down(*a, **k):
+    raise ai_digest.requests.ConnectionError("refused")
+
+
+ai_digest.requests.post = down
+assert ai_digest.select_with_llm(CANDS, LCFG) is None
+# 全バッチで解釈できない → None
+ai_digest.requests.post = lambda *a, **k: FakeChat("JSONではない返事")
+assert ai_digest.select_with_llm(CANDS, LCFG) is None
+# provider: none → LLMを使わない
+assert ai_digest.select_with_llm(CANDS, {**LCFG, "llm": {"provider": "none"}}) is None
+assert ai_digest.strip_think("<think>a</think>{\"items\":[]}") == "{\"items\":[]}"
+assert ai_digest.strip_think("途中で切れた思考</think>{}") == "{}"
+print("✅ ai_digest (openai_compat)")
+
+# .env の読み込み（既存の環境変数は上書きしない）
+envf = TMP / ".env"
+envf.write_text("# コメント\nINFO_DIGEST_TEST_A=1\nINFO_DIGEST_TEST_B=\"two\"\nLOCAL_LLM_API_KEY=from-file\n",
+                encoding="utf-8")
+common.load_dotenv(envf)
+assert os.environ["INFO_DIGEST_TEST_A"] == "1" and os.environ["INFO_DIGEST_TEST_B"] == "two"
+assert os.environ["LOCAL_LLM_API_KEY"] == "local-key"
+print("✅ dotenv")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

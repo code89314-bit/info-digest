@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+
+# 自宅サーバーで動かすときのファイル（Webhook URL・APIキー・既読管理）。Public リポジトリなのでコミットしない
+.env
+.venv/
+.local/

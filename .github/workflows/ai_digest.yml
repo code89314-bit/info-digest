@@ -1,8 +1,10 @@
 name: AI・LLMダイジェスト
 
 on:
-  schedule:
-    - cron: "43 22,9 * * *"   # UTC表記（毎日 7:43 / 18:43 JST）
+  # 定期実行は自宅のLLMサーバー（Windows タスクスケジューラ「info-digest AI」）に移した。
+  # ここでも動かすと二重投稿になるので schedule は止めている。手動実行ボタンだけ残す。
+  # schedule:
+  #   - cron: "43 22,9 * * *"   # UTC表記（毎日 7:43 / 18:43 JST）
   workflow_dispatch:     # 手動実行ボタン
 
 permissions:

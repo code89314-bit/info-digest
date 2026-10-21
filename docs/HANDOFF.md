@@ -95,6 +95,15 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 2. `DRY_RUN=1 python src/ai_digest.py` で、実際のRSSとローカルLLMを使い、Discordに投稿せず出力を確認する
 3. 問題なければ本番実行して、#ai-llm チャンネルに届くことをユーザーに確認してもらう
 
+### 3-5. 実施結果（2026-10-21、LLMサーバー上の Claude Code）
+
+- LLMサーバー = このリポジトリを置いたWindows PC（`D:\info-digest`）。LLM は同じPCの **Strata**（Qwen3.8-Flash-Next Q2_0、`http://127.0.0.1:8080/v1`、APIキー必須）。
+- `ai_digest.llm`（`config.yaml`）で `openai_compat` / `anthropic` / `none` を切り替え。`extra_body` はサーバー独自の項目をそのまま渡す（Strata は `reasoning_budget_tokens`）。
+- バッチ選別（既定25件）→ 重複除去 → `score` 順に `max_items` 件。`<think>` 除去・JSON解釈失敗時1回再試行・`response_format` 非対応なら外して再送。
+- 秘密情報は `.env`（`common.load_dotenv()` が読む）。既読管理は `INFO_DIGEST_STATE_DIR=D:\info-digest\.local\state`（`state/ai_digest.json` の内容で初期化済み）。`.env` `.venv/` `.local/` は `.gitignore` 済み。
+- 定期実行: タスクスケジューラ「info-digest AI」が毎日 7:43 / 18:43 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
+- `.github/workflows/ai_digest.yml` の `schedule:` はコメントアウト（`workflow_dispatch` は残した）。
+
 ## 4. 将来の拡張案（ユーザーと相談済み・未着手）
 
 ### 4-1. 英語の話題記事の「音声ダイジェスト」（NotebookLM風）

@@ -18,14 +18,44 @@ drug_supply:
 ai_digest:
   # Discordに表示する名前
   title: ローカルAIダイジェスト
-  # Claude API のモデル（ANTHROPIC_API_KEY を登録したときだけ使用）
+  # Claude API のモデル（下の llm.provider を anthropic にしたときだけ使用。ANTHROPIC_API_KEY が必要）
   model: claude-haiku-5-5
+
+  # ---- 記事の選別・要約に使うLLM ----
+  # LLMが使えないとき（サーバー停止中・エラー）は、fallback_keywords に一致した記事の見出しだけを投稿します
+  llm:
+    # openai_compat = 自宅のローカルLLMサーバー / anthropic = Claude API / none = LLMを使わない
+    provider: openai_compat
+    # ローカルLLMサーバーのアドレス（末尾は /v1）。いまは同じPCの Strata。
+    # 例: Ollama http://localhost:11434/v1 、LM Studio http://localhost:1234/v1
+    base_url: http://127.0.0.1:8080/v1
+    # サーバーで動いているモデル名（Strata は strata launch の表示、Ollama は ollama list で確認）
+    model: qwen3.8-flash-next-q2_0
+    # APIキーを入れる環境変数の名前（キーの値そのものは .env に書く。不要なら空でよい）
+    api_key_env: LOCAL_LLM_API_KEY
+    # 1回の問い合わせを待つ最大秒数
+    timeout: 600
+    # 0に近いほど毎回同じような選び方になる
+    temperature: 0.2
+    # 1回の問い合わせに入れる候補の数。多いとVRAM・文脈長を圧迫するので25件ずつ分けて選ぶ
+    batch_size: 25
+    # 候補1件あたり、本文の冒頭を何文字までLLMに見せるか
+    summary_chars: 200
+    # 返答の最大トークン数（考える時間も含む）
+    max_tokens: 4000
+    # JSON形式での返答をサーバーに要求する（非対応のサーバーなら自動で外して再送）
+    json_mode: true
+    # サーバー独自の追加設定（そのままリクエストに付ける）。
+    # Strata: reasoning_budget_tokens = 考える量の上限（0で無制限）。
+    #         考えさせない場合は reasoning_budget_tokens の代わりに  chat_template_kwargs: {enable_thinking: false}
+    extra_body:
+      reasoning_budget_tokens: 1024
   # 1回のダイジェストの最大件数
   max_items: 12
   # 何時間前までの記事を対象にするか
   lookback_hours: 36
 
-  # ---- 何を拾うか（Claudeへの指示。自由に書き換えてOK） ----
+  # ---- 何を拾うか（LLMへの指示。自由に書き換えてOK） ----
   focus: |
     VRAM 16GB以下のGPU（RTX 4060 Ti 16GB / 4070系など）で動かせる、ローカル実行のAI。
     - ComfyUI：本体のアップデート、新しいモデル対応、カスタムノード、ワークフロー、省VRAM化の手法
@@ -42,30 +72,30 @@ ai_digest:
   # 見出しの分類
   tags: [ComfyUI・画像/動画生成, ローカルLLM, ツール・アップデート, その他]
 
-  # APIキーなしで動かす場合の絞り込みキーワード（大文字小文字は区別しない）
+  # LLMが使えないときの絞り込みキーワード（大文字小文字は区別しない）
   fallback_keywords: [comfyui, gguf, llama.cpp, ollama, lm studio, local, quantiz, vram, flux, wan, ローカル]
 
   # 日本語の記事だけを対象にする（Zenn・Qiitaのタグ別新着）
   sources:
-    - name: Zenn #ComfyUI
+    - name: "Zenn #ComfyUI"
       url: https://zenn.dev/topics/comfyui/feed
-    - name: Zenn #StableDiffusion
+    - name: "Zenn #StableDiffusion"
       url: https://zenn.dev/topics/stablediffusion/feed
-    - name: Zenn #ローカルLLM
+    - name: "Zenn #ローカルLLM"
       url: https://zenn.dev/topics/localllm/feed
-    - name: Zenn #Ollama
+    - name: "Zenn #Ollama"
       url: https://zenn.dev/topics/ollama/feed
-    - name: Zenn #llama.cpp
+    - name: "Zenn #llama.cpp"
       url: https://zenn.dev/topics/llamacpp/feed
-    - name: Zenn #LM Studio
+    - name: "Zenn #LM Studio"
       url: https://zenn.dev/topics/lmstudio/feed
-    - name: Qiita #ComfyUI
+    - name: "Qiita #ComfyUI"
       url: https://qiita.com/tags/comfyui/feed
-    - name: Qiita #StableDiffusion
+    - name: "Qiita #StableDiffusion"
       url: https://qiita.com/tags/stablediffusion/feed
-    - name: Qiita #ローカルLLM
+    - name: "Qiita #ローカルLLM"
       url: https://qiita.com/tags/%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%ABllm/feed
-    - name: Qiita #Ollama
+    - name: "Qiita #Ollama"
       url: https://qiita.com/tags/ollama/feed
-    - name: Qiita #llama.cpp
+    - name: "Qiita #llama.cpp"
       url: https://qiita.com/tags/llama.cpp/feed
