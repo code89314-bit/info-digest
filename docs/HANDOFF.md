@@ -117,6 +117,35 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
   - **NotebookLM の認証**: notebooklm-py を 0.8.5 に更新（NotebookLM が notebook.google.com に移り 0.3.4 は動かない）。ブラウザログインの Cookie は数時間で切れるため、`notebooklm login --master-token --account <email>` で長期のマスタートークンを作成済み（`~/.notebooklm/profiles/default/master_token.json`、パスワード相当の機密）。`podcast_nlm.ensure_auth()` は使う直前に毎回 `notebooklm auth refresh` で Cookie を発行し直す。Chrome の Cookie 読み取り（`--browser-cookies chrome`）は app-bound 暗号化のため管理者権限が必要で不採用。
   - （当初の計画メモ）②**学習番組**。Strata が公開情報（PMDA の RMP・適正使用ガイド資材、国内学会の治療ガイドライン、治療の変遷）を巡回してテーマ候補を作り、毎日ランダムに1つ選んで「情報の核」と一次資料（論文・メーカー資料・ガイドライン）のリンクを集め、NotebookLM で掘り下げ podcast を作る。扱ったテーマは記録して繰り返さない。音声はニュース1＋学習1で1日2本（上限3本）。PMDA の RMP 一覧は JS 描画で単純取得できないので要調査。
 
+### 3-6. 次の作業：note 週刊マガジン「週刊がん薬物療法ニュース」の下書き生成（2026-10-21 依頼）
+
+**目的**: がん薬物療法の1週間分を、ユーザーの note「じぶんの薬局」（https://note.com/code89314）の文体で、週1本の記事の**下書き**にする。
+公開はユーザーが手で行う（note に公式の投稿APIは無く、ブラウザ自動操作はアカウント停止のリスクがあるため、自動投稿はしない）。
+
+**文体設定**: `style/jibun_yakkyoku.yaml`（ユーザーの過去記事から抽出済み）。
+- `prompt_digest` を NotebookLM への質問の先頭に付ける。`issue`（全体構成）・`topic_block`（1トピックの型）・`rules`・`fixed_footer`・`hashtags` を使う。
+- **過去記事を NotebookLM の資料に入れない**（ニュースの事実に昔の記事の内容が混ざるため）。資料は今週の記事だけ、文体は指示として渡す。
+
+**作るもの**: `src/note_weekly.py`（`config.yaml` に `note_weekly:` 区画を追加。`style_file: style/jibun_yakkyoku.yaml`、`webhook_env`、`enabled` など）
+1. 土曜の週間まとめ（`onco_news.py` の sat）の後に実行。直近7日の `onco_archive.json`（全タグ）と、今週の `learn` のテーマ1本を素材にする。
+2. NotebookLM のノート（`podcast_nlm.Notebook`）に今週の記事URLを資料として入れる。sat の回で作ったノートを使い回せるなら使い回す（チャット回数の節約）。
+3. 質問は分けて行う（長い回答は途中で切れるため）：
+   - ① テーマごとの本文（`issue.sections.themes.order` の順。1回で1〜2テーマ）。各トピックは `topic_block` の型、出典行つき
+   - ② 冒頭（今週の印象2〜4文＋今週のポイント3つ）。①の本文を渡して書かせる
+   - ③ 今週の学習テーマ（learn のノート・要点を素材に。無ければ省略）
+   - NotebookLM のチャットにも1日の回数制限があるので、合計5〜6回以内に収める
+4. 組み立て: タイトル・サブタイトル（`issue.title` / `subtitle`）→ 冒頭 → テーマ別（記事の無いテーマは省く）→ 学習 → 「編集後記：【ここはご自身で一言】」→ `fixed_footer` → ハッシュタグ。
+5. 機械チェック（下書きの末尾に「確認メモ」として付ける。公開時にユーザーが消す）:
+   - 「だ。」「である。」で終わる文、絵文字、「→」、`rules.never` の煽り語の検出
+   - 出典行の無いトピック、「海外（」の無い FDA/EMA の承認、数値を含むのに出典の無い文
+   - `ja_fix()` で簡体字の置換
+6. 出力:
+   - `.local/note_drafts/{年}-W{週}.md`（Markdown）と `.html`（note に貼っても見出し・太字・リンクが崩れないよう、ブラウザで開いて全選択コピー → note に貼り付け、で使える簡素なHTML）
+   - Discord の下書き用チャンネル（新しい Webhook `DISCORD_WEBHOOK_NOTE`。ユーザーに作成してもらう）に、冒頭の要約と、md・html のファイル添付で通知
+7. まず `python src/note_weekly.py --dry-run` で今週分の「第0号」を作り、ユーザーに文体が似ているか確認してもらう。指摘は `style/jibun_yakkyoku.yaml` に反映する（コードに文体を書き込まない）。
+
+**公開前の運用（ユーザー側）**: 数値・承認状況を一次情報と照合 → 体験談・編集後記を加筆 → 確認メモを削除 → note に貼り付けて公開（日曜夜か月曜朝）。
+
 ## 4. 将来の拡張案（ユーザーと相談済み・未着手）
 
 ### 4-1. 英語の話題記事の「音声ダイジェスト」（NotebookLM風）
