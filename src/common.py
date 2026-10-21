@@ -1,5 +1,6 @@
 """共通処理: 設定読み込み、状態ファイル、Discord投稿。"""
 import json
+import mimetypes
 import os
 import time
 from pathlib import Path
@@ -131,7 +132,7 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
 
 def post_discord_file(webhook_env: str, path: Path, content: str = "", username: str | None = None,
                       avatar_url: str | None = None) -> None:
-    """ファイル（podcast の mp3 など）を1つ添付して投稿。DRY_RUN=1 なら表示するだけ。
+    """ファイル（podcast の mp3、note 下書きの md・html など）を1つ添付して投稿。DRY_RUN=1 なら表示するだけ。
 
     Webhook の添付上限はサーバーのブースト無しで 10MB。超えると 413 になる。
     """
@@ -151,7 +152,7 @@ def post_discord_file(webhook_env: str, path: Path, content: str = "", username:
     for attempt in range(4):
         with open(path, "rb") as fh:
             r = requests.post(url, data={"payload_json": json.dumps(payload, ensure_ascii=False)},
-                              files={"files[0]": (path.name, fh, "audio/mpeg")}, timeout=300)
+                              files={"files[0]": (path.name, fh, mimetypes.guess_type(path.name)[0] or "application/octet-stream")}, timeout=300)
         if r.status_code == 429:
             time.sleep(float(r.json().get("retry_after", 2)) + 0.5)
             continue

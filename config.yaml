@@ -372,3 +372,40 @@ learn:
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     ledger: 'E:\onco_tekisei\audio_usage.json'
     daily_limit: 3
+
+# ==== note 週刊マガジン「週刊がん薬物療法ニュース」の下書き ====
+# src/note_weekly.py が動かします（土曜の週間まとめの後に実行する想定）。
+#   直近7日の週間アーカイブ（onco が毎日ためている記事、全分類）を NotebookLM に読ませ、
+#   style_file の文体・型で1本の下書きにして、.local/note_drafts/ に .md と .html で保存し、Discord に通知します。
+#   note への公開は手で行います（自動投稿はしません）。
+# 試すとき: python src/note_weekly.py --dry-run （Discord に送らず、ファイルだけ作る）
+note_weekly:
+  enabled: true
+  title: note 下書き
+  # 文体・構成の設定ファイル（書き方の直しはこちらに書く）
+  style_file: style/jibun_yakkyoku.yaml
+  # 通知先の Webhook URL を入れる環境変数の名前（値は .env に書く）
+  webhook_env: DISCORD_WEBHOOK_NOTE
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png?v=2
+  # 何日分の記事を使うか（作る日を含む）
+  lookback_days: 7
+  # NotebookLM に読ませる最大記事数（スコアの高い順）
+  max_items: 30
+  # 記事がこの数より少ない週は作らない
+  min_items: 3
+  # 1回の質問で書かせるテーマ数（多いと回答が途中で切れる。NotebookLM のチャット回数は「テーマ数÷これ＋1」回）
+  themes_per_ask: 2
+  max_topics_per_theme: 4
+  # 40字を超える文に、Strata で「分けた案」を確認メモに付ける
+  split_long_sentences: true
+  # 記事の分類 → 号のテーマ（style_file の issue.sections の order と同じ名前にする）。書かなければ下と同じ
+  # theme_map:
+  #   新薬・承認: 新薬・承認
+  #   治療ストラテジー: 治療ストラテジー（臨床試験）
+  #   ガイドライン: ガイドライン
+  #   治験: 治験
+  #   安全性情報: 安全性・行政
+  #   行政・供給: 安全性・行政
+  # NotebookLM の設定（CLI の場所・認証・音声の台帳は onco.podcast と共通。ここに書いた項目だけ上書き）
+  notebook:
+    max_url_sources: 30

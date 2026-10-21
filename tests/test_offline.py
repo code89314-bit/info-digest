@@ -523,6 +523,52 @@ assert ai_digest.ja_fix("转移性胰腺癌の随访と监测、推奨等级、�
 assert ai_digest.ja_fix("据え置き・複数の薬剤") == "据え置き・複数の薬剤"   # 日本語の字はそのまま
 print("✅ ja_fix")
 
+# ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------
+import note_weekly  # noqa: E402
+
+common.save_state("onco_archive", {"items": [
+    {"id": "n1", "title": "x", "title_ja": "FDAが新薬Xを承認", "link": "https://ex.com/1", "source": "S", "tag": "新薬・承認",
+     "score": 5, "date": "2026-10-20"},
+    {"id": "n2", "title": "y", "title_ja": "添付文書改訂", "link": "https://ex.com/2", "source": "PMDA", "tag": "安全性情報",
+     "score": 4, "date": "2026-10-19"},
+    {"id": "n3", "title": "z", "title_ja": "GL改訂", "link": "https://ex.com/3", "source": "学会", "tag": "ガイドライン",
+     "score": 3, "date": "2026-10-18"},
+    {"id": "old", "title": "o", "title_ja": "古い", "link": "https://ex.com/o", "source": "S", "tag": "新薬・承認",
+     "score": 5, "date": "2026-10-01"}]})
+ASKS = []
+
+
+class FakeNB:
+    def ask(self, q):
+        ASKS.append(q)
+        if "headline_1" in q:
+            return json.dumps({"headline_1": "新薬X", "headline_2": "GL改訂", "three_lines": ["一。", "二。", "三。"],
+                               "hashtags": ["#新薬X", "乳がん"]}, ensure_ascii=False)
+        return ('{"topics": [{"i": 0, "theme": "新薬・承認", "heading": "新薬Xを承認", "conclusion": "FDAが新薬Xを承認しました。",'
+                ' "before": "記載なし", "next": "", "data": "OS中央値 12.3カ月", "source": "", "url": ""},'
+                ' {"i": 2, "theme": "ガイドライン", "heading": "GL改訂", "conclusion": "' + "あ" * 45 + '。画期的です！",'
+                ' "before": "", "next": "", "data": "", "source": "学会", "url": "https://ex.com/gl"}]}')
+
+    def close(self):
+        ASKS.append("closed")
+
+
+NWCFG = {"style_file": "style/jibun_yakkyoku.yaml", "split_long_sentences": False, "themes_per_ask": 2,
+         "out_dir": str(TMP / "drafts")}
+r = note_weekly.make(NWCFG, dt.date(2026, 10, 24), dry_run=True, nb_factory=FakeNB)
+assert len(ASKS) == 4 and ASKS[-1] == "closed"                       # テーマ3つ→2回＋見出し1回、最後にノート削除
+assert "新薬・承認」「ガイドライン" in ASKS[0] and "古い" not in ASKS[0]   # style の順に2テーマずつ、7日より前は使わない
+md = r["md"].read_text(encoding="utf-8")
+assert r["md"].name == "2026-W43.md" and md.startswith("# 【週刊がん薬物療法】10/18〜10/24｜新薬X、GL改訂 ほか")
+assert md.index("## 新薬・承認") < md.index("## ガイドライン") and "これまで" not in md   # 「記載なし」の行は出さない
+assert "[S](https://ex.com/1)" in md                                  # 出典・URLが空なら記事のものを使う
+assert "#新薬X" in md and "##新薬X" not in md and "AIは書かない" not in md
+memo = "\n".join(r["memo"])
+assert "「海外」の表記がありません" in memo and "【海外】がありません" in memo
+assert "使わない語「画期的」" in memo and "感嘆符" in memo and "40字超" in memo
+assert "<h2>ガイドライン</h2>" in r["html"].read_text(encoding="utf-8")
+print("✅ note_weekly")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500
