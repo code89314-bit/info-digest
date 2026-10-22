@@ -4,7 +4,8 @@
       ただし急ぎの安全性情報（urgent）だけは、その日のうちにテキストで投稿する。
 曜日: 直近1週間のアーカイブから、その曜日のテーマ（config.yaml の onco.schedule）に合う記事を NotebookLM に読ませ、
       トピックを抽出したまとめ＋各記事の要約を投稿し、同じノートで podcast を作って添付する。
-      記事が少ない週（episode.min_items 未満）のテーマは作らず、土曜の週間まとめに任せる。
+      記事が少ない週（episode.min_items 未満）のテーマは、代わりにその日の新着で「今日のニュース」の回を作る
+      （episode.fallback。無効にすると作らず、土曜の週間まとめに任せる）。
 
 使い方: python src/onco_news.py            収集 → 今日の曜日の回
         python src/onco_news.py --collect  収集だけ
@@ -100,17 +101,30 @@ def make_episode(cfg: dict, day: str, webhook: str, title: str) -> None:
         return
     theme = ep.get("theme") or day
     emoji = ep.get("emoji") or cfg.get("icon") or "💊"
-    min_items = int((cfg.get("episode") or {}).get("min_items", 2))
-    if len(items) < min_items:
-        print(f"{JA_DAY[day]}曜「{theme}」は今週 {len(items)} 件のため作りません（週間まとめに任せます）")
-        return
+    opts = cfg.get("episode") or {}
+    min_items = int(opts.get("min_items", 2))
+    daily = len(items) < min_items
+    if daily:
+        fb = opts.get("fallback") or {}
+        today = [a for a in load_state(f"{SECTION}_archive").get("items", [])
+                 if a.get("date") == now_jst().date().isoformat()]
+        today.sort(key=lambda a: -float(a.get("score") or 0))
+        if not fb.get("enabled") or not today:
+            print(f"{JA_DAY[day]}曜「{theme}」は今週 {len(items)} 件のため作りません（週間まとめに任せます）")
+            return
+        print(f"{JA_DAY[day]}曜「{theme}」は今週 {len(items)} 件のため、今日の新着 {len(today)} 件で「{fb.get('theme', '今日のニュース')}」を作ります")
+        ep = {**ep, **{k: v for k, v in fb.items() if k != "enabled"}}
+        theme = ep.get("theme") or "今日のニュース"
+        emoji = ep.get("emoji") or emoji
+        items = today[: int(ep.get("max_items") or opts.get("max_items", 15))]
     print(f"{JA_DAY[day]}曜「{theme}」: {len(items)} 件")
 
     # 動向まとめは「このテーマのトピックを抽出してまとめる」指示にする
     ov = dict(cfg.get("overview") or {})
     ov["enabled"] = True
     ov["group_by"] = ep.get("group_by") or ov.get("group_by") or "トピック"
-    ov["rules"] = list(ov.get("rules") or []) + [f"テーマ「{theme}」の観点で、直近1週間の主なトピックを抽出してまとめる"] + \
+    ov["rules"] = list(ov.get("rules") or []) + [(f"今日の新着の主なトピックを抽出してまとめる" if daily
+                                         else f"テーマ「{theme}」の観点で、直近1週間の主なトピックを抽出してまとめる")] + \
         list(ep.get("rules") or [])
     ov["max_chars"] = ep.get("max_chars") or ov.get("max_chars", 1200)
     ecfg = {**cfg, "overview": ov}
@@ -137,11 +151,11 @@ def make_episode(cfg: dict, day: str, webhook: str, title: str) -> None:
     overview = overview or write_overview(items, ecfg)
     embeds = build_embeds(items, get_tags(cfg), cfg.get("tag_style"))
     if overview:
-        since = now_jst().date() - dt.timedelta(days=int((cfg.get("episode") or {}).get("lookback_days", 7)))
-        embeds.insert(0, {"title": f"{emoji} 今週の「{theme}」トピックス", "description": overview,
+        since = now_jst().date() - dt.timedelta(days=0 if daily else int(opts.get("lookback_days", 7)))
+        embeds.insert(0, {"title": f"{emoji} {'今日' if daily else '今週'}の「{theme}」トピックス", "description": overview,
                           "color": color(ep.get("color"), 0x5C6BC0),
                           "footer": {"text": f"{since:%m/%d}〜{now_jst():%m/%d} の記事 {len(items)}件から｜要約: {by}"}})
-    content = f"{emoji} **{title}｜{JA_DAY[day]}曜：{theme}**（直近1週間 {len(items)}件）"
+    content = f"{emoji} **{title}｜{JA_DAY[day]}曜：{theme}**（{'今日の新着' if daily else '直近1週間'} {len(items)}件）"
     if cfg.get("notice"):
         content += f"\n-# {cfg['notice'].strip()}"
     try:
