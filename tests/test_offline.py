@@ -609,6 +609,75 @@ memo = "\n".join(r["memo"])
 assert "「新薬Xを承認」：出典が報道" not in memo and "裏どり「FDAが新薬Xを承認」：https://www.fda.gov/x" in memo
 print("✅ note_weekly verify")
 
+# ---------- note_hoken（水曜号）：資料選び・テーマ・Q&A・チェック ----------
+import note_hoken  # noqa: E402
+
+assert note_hoken.reiwa_date("疑義解釈資料の送付について（その１３）（令和８年９月25日保険局医療課事務連絡）") == dt.date(2026, 9, 25)
+assert note_hoken.reiwa_date("令和元年5月1日") == dt.date(2019, 5, 1) and note_hoken.reiwa_date("お知らせ") is None
+HK_DOCS = [{"title": "疑義解釈資料の送付について（その13）", "link": "https://www.mhlw.go.jp/q13.pdf", "date": "2026-09-25",
+            "source": "厚労省"},
+           {"title": "第8回検討会の開催について", "link": "https://www.mhlw.go.jp/kaigi.html", "date": "2026-10-21",
+            "source": "厚労省"}]
+note_hoken.collect_docs = lambda cfg, today: HK_DOCS
+STRATA = []
+
+
+def hk_strata(prompt, cfg):
+    STRATA.append(prompt)
+    if "最大3件選んで" in prompt:
+        return {"docs": [0, 9]}                                        # 範囲外の番号は捨てる
+    return {"theme": "外来化学療法の加算", "items": [0], "questions": ["同じ月に2回算定できる？"],
+            "research": "外来化学療法の通知", "query": "外来化学療法 通知"}
+
+
+note_hoken.strata_obj = hk_strata
+HK_ASKS = []
+
+
+class HokenNB:
+    def __init__(self, items):
+        self.items, self.pod = items, {}
+
+    def ask(self, q):
+        HK_ASKS.append(q)
+        if "問・項目を" in q:
+            return '{"items": [{"doc": "その13", "no": "問1", "point": "外来腫瘍化学療法診療料の算定"}]}'
+        return json.dumps({"three_lines": ["月1回に限り算定します。"], "hashtags": ["外来腫瘍化学療法診療料"], "qa": [
+            {"q": "同じ月に2回算定できる？", "answer": "算定できる。", "basis": "その13 問1", "cond": "",
+             "source": "厚労省", "url": "https://www.mhlw.go.jp/q13.pdf"},
+            {"q": "Q. 公費は？", "answer": "対象です。", "basis": "", "cond": "記載なし", "source": "ブログ",
+             "url": "https://blog.example/x"},
+            {"q": "Q. 答えなし", "answer": ""}]}, ensure_ascii=False)
+
+    def research(self, query, mode="fast", fallback=None):
+        HK_ASKS.append("research:" + fallback)
+        return 3
+
+    def sources(self):
+        return [{"title": "その13", "url": "https://www.mhlw.go.jp/q13.pdf"}, {"title": "メモ", "url": ""}]
+
+    def close(self):
+        HK_ASKS.append("closed")
+
+
+HKCFG = {"style_file": "style/hoken_kouhi.yaml", "split_long_sentences": False, "out_dir": str(TMP / "drafts")}
+note_hoken.make_cover_image = lambda *a: None
+r = note_hoken.make(HKCFG, dt.date(2026, 10, 28), dry_run=True, with_audio=False, nb_factory=HokenNB)
+assert r["doc"]["title"] == "【保険と公費のギモン】外来化学療法の加算"
+assert "[0] 2026-09-25 疑義解釈資料の送付について（その13）" in STRATA[0]
+assert "[0] その13｜問1｜外来腫瘍化学療法診療料の算定" in STRATA[1]            # 資料の問からテーマを決める
+assert HK_ASKS[1] == "research:外来化学療法 通知" and HK_ASKS[-1] == "closed"
+assert "その13 — https://www.mhlw.go.jp/q13.pdf" in HK_ASKS[2] and "メモ —" not in HK_ASKS[2]
+qa = r["doc"]["qa"]
+assert [q["q"] for q in qa] == ["Q. 同じ月に2回算定できる？", "Q. 公費は？"] and qa[1]["cond"] == ""
+memo = "\n".join(r["memo"])
+assert "答え：だ・である調" in memo and "「Q. 公費は？」：根拠" in memo and "行政資料ではありません（blog.example）" in memo
+md = r["md"].read_text(encoding="utf-8")
+assert md.index("今回の3行") < md.index("ここに note の目次") < md.index("## よくある疑問") < md.index("## 根拠資料")
+assert "審査支払機関" in md and "- 第8回検討会" not in md
+assert not common.load_state("note_hoken")                           # dry-run は使った資料を記録しない
+print("✅ note_hoken")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

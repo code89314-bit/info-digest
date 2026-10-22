@@ -150,6 +150,86 @@ def make_cover(start: dt.date, end: dt.date, out: Path, seed: int | None = None)
     return out
 
 
+# ---- 水曜号「保険と公費のギモン」：保険証・レセプト・吹き出しの「？」 ----
+CARD, CARD_BAND, SHEET, BUBBLE = "#F7F5EE", "#E8A88C", "#FBFAF6", "#F2F0EA"
+
+
+def label(img, text: str, size: int, cx, cy, deg: float = 0, color=INK) -> None:
+    """回した文字を (cx, cy) を中心に貼る（K 倍の座標）。"""
+    font = ImageFont.truetype(FONT, int(size * K))
+    box = ImageDraw.Draw(img).textbbox((0, 0), text, font=font)
+    tile = Image.new("RGBA", (box[2] - box[0] + 20 * K, box[3] - box[1] + 20 * K), (0, 0, 0, 0))
+    ImageDraw.Draw(tile).text((tile.width / 2, tile.height / 2), text, font=font, fill=color, anchor="mm")
+    tile = tile.rotate(-deg, resample=Image.BICUBIC, expand=True)
+    img.alpha_composite(tile, (int(cx - tile.width / 2), int(cy - tile.height / 2)))
+
+
+def insurance_card(img, pen: Pen, cx, cy) -> None:
+    w, h, deg = 440 * K, 270 * K, -7
+    x0, y0 = cx - w / 2, cy - h / 2
+    pen.shape(rotate(rounded(x0, y0, x0 + w, y0 + h, 26 * K), cx, cy, deg), CARD)
+    pen.shape(rotate(edge((x0, y0 + 26 * K), (x0 + w, y0 + 26 * K), 20) + edge((x0 + w, y0 + 26 * K), (x0 + w, y0 + 78 * K), 6)
+                     + edge((x0 + w, y0 + 78 * K), (x0, y0 + 78 * K), 20) + edge((x0, y0 + 78 * K), (x0, y0 + 26 * K), 6),
+                     cx, cy, deg), CARD_BAND, width=4)
+    pen.shape(rotate(rounded(x0 + 30 * K, y0 + 110 * K, x0 + 130 * K, y0 + 230 * K, 10 * K), cx, cy, deg), "#D9DDE3", width=5)
+    for k in range(4):                                   # 記載欄の行
+        y = y0 + (118 + k * 34) * K
+        pen.line(pen.wobble(rotate(edge((x0 + 160 * K, y), (x0 + w - (40 + (k % 2) * 70) * K, y), 12), cx, cy, deg), 1.0),
+                 width=4.5, color=(150, 150, 150))
+    lx, ly = rotate([(cx, y0 + 52 * K)], cx, cy, deg)[0]
+    label(img, "保険と公費", 30, lx, ly, deg)
+
+
+def receipt(img, pen: Pen, cx, cy, day: dt.date) -> None:
+    w, h, deg = 300 * K, 390 * K, 6
+    x0, y0 = cx - w / 2, cy - h / 2
+    outline = edge((x0, y0), (x0 + w, y0)) + edge((x0 + w, y0), (x0 + w, y0 + h)) + \
+        edge((x0 + w, y0 + h), (x0, y0 + h)) + edge((x0, y0 + h), (x0, y0))
+    pen.shape(rotate(outline, cx, cy, deg), SHEET)
+    gx0, gx1, gy0 = x0 + 28 * K, x0 + w - 28 * K, y0 + 110 * K
+    for k in range(6):                                   # 表の横線
+        pen.line(pen.wobble(rotate(edge((gx0, gy0 + k * 42 * K), (gx1, gy0 + k * 42 * K), 12), cx, cy, deg), 0.8),
+                 width=3.5, color=(120, 120, 120))
+    pen.line(pen.wobble(rotate(edge((gx1 - 80 * K, gy0), (gx1 - 80 * K, gy0 + 210 * K), 10), cx, cy, deg), 0.8),
+             width=3.5, color=(120, 120, 120))
+    lx, ly = rotate([(cx, y0 + 50 * K)], cx, cy, deg)[0]
+    label(img, f"{day.month}/{day.day}", 30, lx, ly, deg)
+    for k, pts in enumerate(("20", "45", "100", "8")):  # 点数の欄
+        px, py = rotate([(gx1 - 40 * K, gy0 + (21 + k * 42) * K)], cx, cy, deg)[0]
+        label(img, pts, 18, px, py, deg, color=(90, 90, 90))
+    px, py = rotate([(cx - 30 * K, y0 + h - 50 * K)], cx, cy, deg)[0]
+    label(img, "点", 26, px, py, deg)
+
+
+def question_bubble(img, pen: Pen, cx, cy) -> None:
+    r = 92 * K
+    pts = [(cx + r * math.cos(math.radians(a)), cy + r * 0.86 * math.sin(math.radians(a))) for a in range(120, 470, 6)]
+    tail = [(cx - 40 * K, cy + 70 * K), (cx - 92 * K, cy + 128 * K), (cx - 6 * K, cy + 82 * K)]
+    pen.shape(pts[:-6] + tail + pts[-6:], BUBBLE)
+    label(img, "？", 92, cx + 4 * K, cy - 2 * K)
+
+
+def make_cover_hoken(day: dt.date, out: Path, seed: int | None = None) -> Path:
+    week = day.isocalendar()[1]
+    bg = BACKGROUNDS[(week + 2) % len(BACKGROUNDS)]      # 土曜号と同じ週でも背景色をずらす
+    img = Image.new("RGBA", (W * K, H * K), rgb(bg) + (255,))
+    pen = Pen(ImageDraw.Draw(img), seed if seed is not None else week + 100)
+    receipt(img, pen, 820 * K, 350 * K, day)
+    pen.d = ImageDraw.Draw(img)
+    insurance_card(img, pen, 450 * K, 330 * K)
+    pen.d = ImageDraw.Draw(img)
+    question_bubble(img, pen, 1080 * K, 150 * K)
+    pen.d = ImageDraw.Draw(img)
+    capsule(img, pen, 250 * K, 560 * K, -18)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").resize((W, H), Image.LANCZOS).save(out)
+    return out
+
+
 if __name__ == "__main__":
+    if sys.argv[1] == "hoken":     # python scripts/make_cover.py hoken 2026-10-28 [out.png]
+        print(make_cover_hoken(dt.date.fromisoformat(sys.argv[2]),
+                               Path(sys.argv[3]) if len(sys.argv) > 3 else Path(".local/cover_hoken.png")))
+        sys.exit()
     s, e = (dt.date.fromisoformat(a) for a in sys.argv[1:3])
     print(make_cover(s, e, Path(sys.argv[3]) if len(sys.argv) > 3 else Path(".local/cover.png")))

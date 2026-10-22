@@ -225,6 +225,12 @@ class Notebook:
         srcs = data.get("sources", []) if isinstance(data, dict) else []
         return [s for s in srcs if isinstance(s, dict) and s.get("url")]
 
+    def sources(self) -> list[dict]:
+        """ノートの資料の [{title, url}]（ファイルやテキストの資料は url が空）。"""
+        data = _cli(self.pod, ["source", "list", "-n", self.nb, "--json"], check=False)
+        srcs = data.get("sources", []) if isinstance(data, dict) else []
+        return [{"title": s.get("title") or "", "url": s.get("url") or ""} for s in srcs if isinstance(s, dict)]
+
     def add_urls(self, urls: list[str]) -> list[str]:
         """URL を資料に足す。読み込めた URL を返す。"""
         ids = {}

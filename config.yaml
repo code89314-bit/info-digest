@@ -424,3 +424,44 @@ note_weekly:
     # false: ブラウザの画面を出して操作する（土曜の実行時に数十秒だけ画面が出る）。
     # true（画面なし）は note のエディタの読み込みが終わらず失敗する（2026-10-21 確認）
     headless: false
+
+# ==== note 水曜号「保険と公費のギモン」（src/note_hoken.py、タスク「info-digest note hoken」毎週水曜 22:00） ====
+# 行政資料（疑義解釈・通知・事務連絡）から Strata がテーマを決め、NotebookLM が Q&A と音声を作り、note に下書き保存する
+note_hoken:
+  enabled: true
+  title: note 下書き（水曜）
+  style_file: style/hoken_kouhi.yaml
+  webhook_env: DISCORD_WEBHOOK_NOTE
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png?v=2
+  # 何日前までの行政資料を候補にするか
+  lookback_days: 45
+  # 同じ資料を使わない期間（週）
+  avoid_weeks: 26
+  # 1号で NotebookLM に読ませる行政資料の数（Strata が選ぶ）
+  max_docs: 3
+  # NotebookLM に挙げさせる「資料にある問・項目」の数（Strata がここからテーマを決める）
+  outline_items: 15
+  # 行政資料の一覧ページ（リンクの文字に「令和X年M月D日」があるものを拾う）。改定の年度が変わったら足す
+  pages:
+    - name: 厚労省 令和8年度診療報酬改定
+      url: https://www.mhlw.go.jp/stf/newpage_67729.html
+  # 新着 RSS（keywords を含む見出しだけ。書かなければ note_hoken.py の DEFAULT_KEYWORDS）
+  feeds:
+    - name: 厚労省 新着
+      url: https://www.mhlw.go.jp/stf/news.rdf
+  # 質問サイトのよくある質問（タイトルだけ使う）。しろぼんねっとは 2026-10-22 からメンテナンス中で、
+  # 利用規約・robots.txt を確認できていないため無効。確認できたら url / title_pattern を入れて true にする
+  questions:
+    enabled: false
+    url: ""
+  # テーマを決めたあと、NotebookLM のウェブ調査で告示・通知の原文を足す
+  research: true
+  research_mode: fast
+  # 音声（NotebookLM の音声の1日上限は onco.podcast.daily_limit と共通）
+  audio: true
+  split_long_sentences: true
+  notebook:
+    max_url_sources: 10
+  note_post:
+    enabled: true
+    headless: false

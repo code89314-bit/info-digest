@@ -7,6 +7,7 @@
 # up to -WaitMinutes, then run anyway: ai_digest.py falls back to keyword matching by itself.
 #   -Module onco_news -Section onco: weekly oncology news (collect daily, themed episode per weekday)
 #   -Module note_weekly -Section note_weekly: weekly note draft (task "info-digest note", Sat 22:00)
+#   -Module note_hoken -Section note_hoken: Wednesday note draft (task "info-digest note hoken", Wed 22:00)
 param([string]$Section = 'ai_digest', [string]$Module = 'ai_digest', [int]$WaitMinutes = 180)
 
 $root = Split-Path -Parent $PSScriptRoot
