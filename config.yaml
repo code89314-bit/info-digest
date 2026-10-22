@@ -159,7 +159,7 @@ ai_global:
       url: https://github.com/ollama/ollama/releases.atom
 
 # ==== がん薬物療法ニュース（国内中心・週単位・曜日テーマ）====
-# src/onco_news.py が動かします（タスク「info-digest onco」毎日 7:50）。
+# src/onco_news.py が動かします（タスク「info-digest onco」毎日 6:30）。
 #   毎日: 新着を Strata が選別・分類して「週間アーカイブ」にためる（投稿しない。急ぎの安全性情報だけ即日投稿）
 #   曜日: 直近1週間のアーカイブから、その曜日のテーマの記事を NotebookLM に読ませて、まとめ＋podcast を投稿
 # llm: を書かなければ ai_digest の llm と同じサーバー・モデルを使います。

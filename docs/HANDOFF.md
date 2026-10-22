@@ -25,7 +25,7 @@ GitHub Actions（無料・Public リポジトリ）で定期実行し、Discord 
 |---|---|---|---|---|
 | 地震・津波情報 | `src/earthquake.py` | P2P地震情報 API v2 `https://api.p2pquake.net/v2/history?codes=551&codes=552` | 5分ごと | 稼働中 |
 | 医薬品供給情報 | `src/drug_supply.py` | 厚労省「医療用医薬品供給状況報告」ページの最新Excel（`今回掲載時の更新有無`= New の行） | 平日 10:17 / 13:17 / 16:17 / 19:17 | 稼働中 |
-| AI・LLMダイジェスト | `src/ai_digest.py` | Zenn・Qiita のタグ別RSS（11本、`config.yaml` 参照） | 毎日 7:43 / 18:43 | 稼働中 |
+| AI・LLMダイジェスト | `src/ai_digest.py` | Zenn・Qiita のタグ別RSS（11本、`config.yaml` 参照） | 毎日 17:00 | 稼働中 |
 
 ```
 config.yaml                 全設定（ユーザーが直接編集する前提。日本語コメントあり）
@@ -101,19 +101,19 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - `ai_digest.llm`（`config.yaml`）で `openai_compat` / `anthropic` / `none` を切り替え。`extra_body` はサーバー独自の項目をそのまま渡す（Strata は `reasoning_budget_tokens`）。
 - バッチ選別（既定25件）→ 重複除去 → `score` 順に `max_items` 件。`<think>` 除去・JSON解釈失敗時1回再試行・`response_format` 非対応なら外して再送。
 - 秘密情報は `.env`（`common.load_dotenv()` が読む）。既読管理は `INFO_DIGEST_STATE_DIR=D:\info-digest\.local\state`（`state/ai_digest.json` の内容で初期化済み）。`.env` `.venv/` `.local/` は `.gitignore` 済み。
-- 定期実行: タスクスケジューラ「info-digest AI」が毎日 7:43 / 18:43 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
+- 定期実行: タスクスケジューラ「info-digest AI」が毎日 17:00 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
 - `.github/workflows/ai_digest.yml` の `schedule:` はコメントアウト（`workflow_dispatch` は残した）。
-- 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 8:13 / 19:13。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
+- 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 12:00。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
 
 - 追加: **がん薬物療法** `onco`（`config.yaml` の別区画、`DISCORD_WEBHOOK_ONCO`）。国内（PMDA 承認審査・安全対策、厚労省 報道発表、Minds）＋海外（ESMO・NCI・OncLive・Targeted Oncology・CancerNetwork。FDA公式はこのPCから403/404のため報道で代替）。
   - 投稿の先頭に LLM が書く「📋 今日の動向まとめ」（`overview`、がん種別）。冒頭に注意書き（`notice`）。
   - `llm.dedupe: true` で、出典違いの同じ出来事を最後にLLMで1件にまとめる（全区画共通）。
   - `podcast.summarize: true`: 選別だけ Strata。選んだ記事のURLを NotebookLM に読ませ、見出し・要約（`ask` 1回＋途中で切れた分の聞き直し1回）と動向まとめ（`ask` 1回）を NotebookLM が書く。同じノートで音声も作る。NotebookLM が使えなければ Strata の要約で投稿。
   - **podcast**（`src/podcast_nlm.py`）: NotebookLM（`E:\onco_tekisei` と同じ notebooklm-py・認証・1日上限台帳 `audio_usage.json`）で音声概要を作り、ffmpeg で10MB以下に圧縮して Discord に添付。失敗時は理由を1行投稿。
-  - タスク「info-digest onco」毎日 7:50（NotebookLM の認証延命 7:30 の後）。
+  - タスク「info-digest onco」毎日 6:30（学習 6:00 の後。NotebookLM の認証延命は 5:30）。
   - 既知の限界: Strata の Q2_0 量子化モデルは、要約に中国語の字体や英語が混ざることがある。
   - **2026-10-21 週単位・曜日テーマに変更**（`src/onco_news.py`、タスクは `-Module onco_news`）: 毎日 Strata が選別・分類して `state/onco_archive.json` にためる（投稿なし。安全性情報で score≥4 だけ即日テキスト）。`onco.schedule` で 月 新薬 / 火 治療ストラテジー / 水 ガイドライン / 木 治験 / 金 安全性・行政 / 土 週間まとめ / 日 休み。その曜日は直近7日のアーカイブを NotebookLM に読ませて、トピック抽出まとめ＋要約＋podcast。テーマの記事が `episode.min_items` 未満の週は作らない。国内ソースに薬事日報・AnswersNews・QLifePro を追加（国内RSSはがん関連が少なく、国内の拡充は②学習番組のクロールと合わせて行う）。
-  - ②**学習番組** 実装済み（`src/learn.py`、`config.yaml` の `learn`、タスク「info-digest learn」毎日 6:30）。Strata が categories×seeds から学習テーマ（title / core / research）を作って `state/learn.json` に蓄え、毎日1つ選んで NotebookLM のウェブ調査（`source add-research --mode fast --import-all`）で一次資料を集め、要点を投稿＋podcast。PMDA 検索・DuckDuckGo・Bing のスクレイピングは使えなかったので、資料探しは NotebookLM に任せた。`ai_digest.ja_fix()` で Strata 出力の簡体字を日本語に置換。
+  - ②**学習番組** 実装済み（`src/learn.py`、`config.yaml` の `learn`、タスク「info-digest learn」毎日 6:00）。Strata が categories×seeds から学習テーマ（title / core / research）を作って `state/learn.json` に蓄え、毎日1つ選んで NotebookLM のウェブ調査（`source add-research --mode fast --import-all`）で一次資料を集め、要点を投稿＋podcast。PMDA 検索・DuckDuckGo・Bing のスクレイピングは使えなかったので、資料探しは NotebookLM に任せた。`ai_digest.ja_fix()` で Strata 出力の簡体字を日本語に置換。
   - **NotebookLM の認証**: notebooklm-py を 0.8.5 に更新（NotebookLM が notebook.google.com に移り 0.3.4 は動かない）。ブラウザログインの Cookie は数時間で切れるため、`notebooklm login --master-token --account <email>` で長期のマスタートークンを作成済み（`~/.notebooklm/profiles/default/master_token.json`、パスワード相当の機密）。`podcast_nlm.ensure_auth()` は使う直前に毎回 `notebooklm auth refresh` で Cookie を発行し直す。Chrome の Cookie 読み取り（`--browser-cookies chrome`）は app-bound 暗号化のため管理者権限が必要で不採用。
   - （当初の計画メモ）②**学習番組**。Strata が公開情報（PMDA の RMP・適正使用ガイド資材、国内学会の治療ガイドライン、治療の変遷）を巡回してテーマ候補を作り、毎日ランダムに1つ選んで「情報の核」と一次資料（論文・メーカー資料・ガイドライン）のリンクを集め、NotebookLM で掘り下げ podcast を作る。扱ったテーマは記録して繰り返さない。音声はニュース1＋学習1で1日2本（上限3本）。PMDA の RMP 一覧は JS 描画で単純取得できないので要調査。
 
@@ -146,7 +146,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 7. まず `python src/note_weekly.py --dry-run` で今週分の「第0号」を作り、ユーザーに確認してもらう。指摘は `style/jibun_yakkyoku.yaml` に反映する（コードに文体を書き込まない）。
 
 **実施結果（2026-10-21）**: `src/note_weekly.py` を作成。第0号（2026-W43）を作り、Discord の下書きチャンネルに通知済み。
-- タスク「info-digest note」毎週土曜 10:30（onco の週間まとめの後）。`scripts/run_ai_digest.ps1 -Module note_weekly -Section note_weekly`
+- タスク「info-digest note」毎週土曜 22:00（onco の週間まとめの後）。`scripts/run_ai_digest.ps1 -Module note_weekly -Section note_weekly`
 - 第0号での指摘を style に反映: 文末の ×/○ 例（だ・である調が多発したため）、今週より前の出来事は結論に日付、一般論の「これまで」は省く、冒頭の「この記事について」（AI作成・キャッチアップ目的・一次資料確認・自動化の実験場）
 - 確認メモに追加: 過去の出来事なのに日付が無い、出典が報道だけ（一次情報のドメインは `PRIMARY` / config の `primary_domains`）
 - その週の onco の podcast（圧縮前の mp3、土曜の回を優先）を下書きの横にコピーし、末尾に「今週の音声版（AI音声）」の節。note の音声埋め込み（MP3、100MBまで）で貼る
