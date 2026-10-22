@@ -88,6 +88,7 @@ WRITE_PROMPT = """{digest}
 書き方の見本（この文体・文末で書く）:
 {example}
 
+- 1問1論点。答えと根拠が同じになる問は1つにまとめる（言い換えただけの問を並べない）。
 - q: 小見出し。「Q. 」で始まる問いの形。40字以内。
 - answer: 1〜2文。1文40字以内。算定できる／できない、対象／対象外を先に。
 - basis: 通知・告示・事務連絡の名前と項番（疑義解釈は問番号）。
@@ -390,6 +391,11 @@ def check(doc: dict, style: dict, primary: list[str] | None = None) -> tuple[lis
             memo.append(f"「{q['q']}」：出典のURLがありません")
         elif not is_primary_host(host, primary or PRIMARY):
             memo.append(f"「{q['q']}」：出典が行政資料ではありません（{host}）。原文を確認してください")
+    seen = {}
+    for q in doc["qa"]:   # 根拠が同じ問は、言い換えの重複であることが多い
+        if q["basis"] and q["basis"] in seen:
+            memo.append(f"「{q['q']}」：「{seen[q['basis']]}」と根拠が同じです（重複していないか確認）")
+        seen.setdefault(q["basis"], q["q"])
     for where, s in long:
         memo.append(f"{where}：{max_chars}字超（{len(s)}字）「{s}」")
     return memo, long

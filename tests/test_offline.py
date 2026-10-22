@@ -647,6 +647,8 @@ class HokenNB:
              "source": "厚労省", "url": "https://www.mhlw.go.jp/q13.pdf"},
             {"q": "Q. 公費は？", "answer": "対象です。", "basis": "", "cond": "記載なし", "source": "ブログ",
              "url": "https://blog.example/x"},
+            {"q": "Q. 言い換え", "answer": "月1回です。", "basis": "その13 問1", "source": "厚労省",
+             "url": "https://www.mhlw.go.jp/q13.pdf"},
             {"q": "Q. 答えなし", "answer": ""}]}, ensure_ascii=False)
 
     def research(self, query, mode="fast", fallback=None):
@@ -669,9 +671,10 @@ assert "[0] その13｜問1｜外来腫瘍化学療法診療料の算定" in STR
 assert HK_ASKS[1] == "research:外来化学療法 通知" and HK_ASKS[-1] == "closed"
 assert "その13 — https://www.mhlw.go.jp/q13.pdf" in HK_ASKS[2] and "メモ —" not in HK_ASKS[2]
 qa = r["doc"]["qa"]
-assert [q["q"] for q in qa] == ["Q. 同じ月に2回算定できる？", "Q. 公費は？"] and qa[1]["cond"] == ""
+assert [q["q"] for q in qa] == ["Q. 同じ月に2回算定できる？", "Q. 公費は？", "Q. 言い換え"] and qa[1]["cond"] == ""
 memo = "\n".join(r["memo"])
 assert "答え：だ・である調" in memo and "「Q. 公費は？」：根拠" in memo and "行政資料ではありません（blog.example）" in memo
+assert "「Q. 言い換え」：「Q. 同じ月に2回算定できる？」と根拠が同じ" in memo
 md = r["md"].read_text(encoding="utf-8")
 assert md.index("今回の3行") < md.index("ここに note の目次") < md.index("## よくある疑問") < md.index("## 根拠資料")
 assert "審査支払機関" in md and "- 第8回検討会" not in md
