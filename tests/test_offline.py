@@ -681,6 +681,89 @@ assert "審査支払機関" in md and "- 第8回検討会" not in md
 assert not common.load_state("note_hoken")                           # dry-run は使った資料を記録しない
 print("✅ note_hoken")
 
+# ---------- qa_deep（疑問深堀り）：患者情報の確認・解釈・資料・まとめ・音声の枠 ----------
+import qa_deep  # noqa: E402
+
+QA_STRATA = []
+
+
+def qa_strata(prompt, cfg):
+    QA_STRATA.append(prompt)
+    if "送ってよいか" in prompt:
+        if "山田" in prompt:
+            return {"ok": False, "reasons": ["患者の氏名"], "rewrite": "70代の患者で…"}
+        return {"ok": "true"}
+    return {"title": "腎機能低下時のカペシタビン", "interpretation": "減量基準を知りたい。",
+            "points": ["CrCl 30未満は？", "30〜50は？"], "queries": ["カペシタビン 腎機能 添付文書", "capecitabine renal"],
+            "research": "カペシタビンの添付文書と腎機能別の用量"}
+
+
+qa_deep.strata_obj = qa_strata
+r = qa_deep.answer("山田さんのカペシタビン", {}, qid="t0", publish=False)
+assert r["status"] == "blocked" and r["privacy"]["rewrite"] == "70代の患者で…" and len(QA_STRATA) == 1   # 外部には何も送らない
+
+
+def broken(prompt, cfg):
+    raise RuntimeError("down")
+
+
+qa_deep.strata_obj = broken
+assert qa_deep.privacy_check("x", {})["ok"] is False                 # Strata が答えないときは止める側
+qa_deep.strata_obj = qa_strata
+QA_LOG = []
+
+
+class QANB:
+    def __init__(self):
+        self.pod, self.nb, self.srcs = {}, "nb1", [{"title": "添付文書", "url": "https://www.pmda.go.jp/pi.pdf"}]
+
+    def research(self, query, mode="fast", fallback=None):
+        QA_LOG.append("research")
+        return 1
+
+    def sources(self):
+        return self.srcs
+
+    def discover(self, q):
+        return [{"url": "https://www.pmda.go.jp/pi.pdf"}, {"url": "https://blog.example/a"},
+                {"url": "https://pubmed.ncbi.nlm.nih.gov/123/"}]
+
+    def add_urls(self, urls):
+        QA_LOG.append(urls)
+        self.srcs += [{"title": "論文", "url": u} for u in urls]
+        return urls
+
+    def ask(self, q):
+        QA_LOG.append(q)
+        return json.dumps({"three_lines": ["CrCl 30未満は禁忌です。"], "unknown": "透析時のデータはありません。",
+                           "hashtags": ["カペシタビン"], "points": [
+                               {"heading": "CrCl 30未満", "conclusion": "禁忌です。", "evidence": "添付文書の禁忌に記載されている。",
+                                "note": "", "source": "添付文書", "url": "https://www.pmda.go.jp/pi.pdf"},
+                               {"heading": "ブログ", "conclusion": "減量します。", "evidence": "", "note": "", "source": "x",
+                                "url": "https://blog.example/a"}]}, ensure_ascii=False)
+
+    def close(self):
+        QA_LOG.append("closed")
+
+
+qa_deep.make_cover_image = lambda *a: None
+r = qa_deep.answer("70代の腎機能低下患者のカペシタビン", {"out_dir": str(TMP / "qa")}, qid="t1", nb_factory=QANB, publish=False)
+assert r["status"] == "done" and r["doc"]["title"] == "【ギモン深堀り】腎機能低下時のカペシタビン"
+assert QA_LOG[1] == ["https://pubmed.ncbi.nlm.nih.gov/123/"]           # 一次資料のサイトだけ・既にある資料は足さない
+assert "https://pubmed.ncbi.nlm.nih.gov/123/" in QA_LOG[2] and "closed" not in QA_LOG   # ノートは音声まで残す
+memo = "\n".join(r["memo"])
+assert "根拠：だ・である調" in memo and "一次資料のサイトではありません（blog.example）" in memo
+md = r["md"].read_text(encoding="utf-8")
+assert md.index("今回のギモン") < md.index("結論（3行）") < md.index("ここに音声ファイル「t1.mp3」") < md.index("## 深堀り")
+assert "## 資料で分からなかったこと" in md and "個別の患者さんへの判断を示すものではありません" in md
+# 音声の枠: 1日3本、朝7:30までは2本、水曜23:00までは1本を空けておく
+QCFG = {"audio_reserve": [{"until": "07:30", "n": 2}, {"weekday": 2, "until": "23:00", "n": 1}]}
+assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6, 0), used=0) == 1
+assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 9, 0), used=2) == 1
+assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9, 0), used=2) == 0   # 水曜は水曜号の分
+assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
+print("✅ qa_deep")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

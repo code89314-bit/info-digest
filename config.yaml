@@ -465,3 +465,26 @@ note_hoken:
   note_post:
     enabled: true
     headless: false
+
+# ==== 疑問深堀り（Discord の疑問深堀チャンネル → 一次資料で確かめて note の下書き）。src/qa_bot.py（常駐）・src/qa_deep.py ====
+# .env に DISCORD_BOT_TOKEN と DISCORD_QA_CHANNEL_ID（チャンネルID）を書く。Bot の持ち主の書き込みだけを疑問として受け付ける
+qa_bot:
+  enabled: true
+  style_file: style/gimon.yaml
+  # Bot の持ち主（開発者ポータルの Owner）以外に受け付ける Discord のユーザーID
+  owner_ids: []
+  research_mode: fast
+  # 検索で足す一次資料の数（ウェブ調査の資料とは別）
+  max_extra_sources: 8
+  cover_image: true
+  out_dir: .local/qa
+  # NotebookLM の音声は1日3本（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
+  audio_reserve:
+    - {until: "07:30", n: 2}               # 学習 6:00・ニュース 6:30
+    - {weekday: 2, until: "23:00", n: 1}   # 水曜号 22:00（weekday: 0=月 … 6=日）
+  # 音声待ちを確認する間隔（分）
+  audio_check_minutes: 20
+  notebook: {}
+  note_post:
+    enabled: true
+    headless: false

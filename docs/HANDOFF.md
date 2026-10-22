@@ -186,3 +186,16 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 設定のリストが空（YAMLで `None` になる）でも落ちないこと。過去に `watchlist:` が空で落ちたため、`cfg.get("x") or []` の形にしてある。
 - 秘密情報（Webhook URL・APIキー）をコードやコミットに含めない。
 - ユーザーは非エンジニア寄り。説明は日本語で、手順は具体的に書くこと。
+
+## 疑問深堀り（Discord の疑問深堀チャンネル → note の下書き）2026-10-22
+
+- `src/qa_bot.py`（Discord Bot、常駐）と `src/qa_deep.py`（処理の中身）、書き方は `style/gimon.yaml`、設定は `config.yaml` の `qa_bot`。
+- 流れ: チャンネルに疑問を書く → スレッドを作って返信 → Strata が患者情報を確認（疑わしければ外部に送らず、言い換え案を返して止める）
+  → Strata が解釈・論点・検索語 → NotebookLM のウェブ調査＋検索（一次資料のドメインだけ）→ NotebookLM が論点ごとに「結論→根拠→注意→出典」
+  → 確認メモ → note に下書き保存（トップ画像は `make_cover.make_cover_gimon`）→ スレッドに要約・md/html・note のURL。
+- 音声: NotebookLM の1日3本の枠に空きがあるときだけ（`audio_reserve` で学習・ニュース・水曜号の分を空けておく）。
+  無ければノートを残して待ち（`.local/state/qa_bot.json` の pending）、20分おきに確認して、作ったらスレッドに貼り note の下書きにも埋め込む。
+- 受け付けるのは Bot の持ち主（開発者ポータルの Owner）の書き込みだけ。
+- 必要: `.env` に `DISCORD_BOT_TOKEN` と `DISCORD_QA_CHANNEL_ID`、開発者ポータルで Message Content Intent を ON、`pip install discord.py`。
+- 起動: タスク「info-digest qa bot」（ログオン時、`scripts/run_qa_bot.ps1`。落ちたら60秒後に再起動）。ログは `.local/logs/qa_bot-YYYYMMDD.log`。
+- note のブラウザ（プロフィール）は同時に1つしか開けないので、`note_publish.save_draft` はロック（`.local/note_profile.lock`）を取ってから動く。

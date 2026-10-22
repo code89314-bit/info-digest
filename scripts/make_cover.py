@@ -226,7 +226,68 @@ def make_cover_hoken(day: dt.date, out: Path, seed: int | None = None) -> Path:
     return out
 
 
+# ---- ギモン深堀り（疑問深堀チャンネル）：添付文書・虫めがね・吹き出しの「？」 ----
+LENS, HANDLE = "#DCE8EE", "#B8875C"
+
+
+def insert_sheet(img, pen: Pen, cx, cy) -> None:
+    """添付文書（左上に赤い帯、細かい行）。"""
+    w, h, deg = 360 * K, 440 * K, -5
+    x0, y0 = cx - w / 2, cy - h / 2
+    outline = edge((x0, y0), (x0 + w, y0)) + edge((x0 + w, y0), (x0 + w, y0 + h)) + \
+        edge((x0 + w, y0 + h), (x0, y0 + h)) + edge((x0, y0 + h), (x0, y0))
+    pen.shape(rotate(outline, cx, cy, deg), SHEET)
+    band = edge((x0 + 24 * K, y0 + 24 * K), (x0 + 120 * K, y0 + 24 * K), 8) + \
+        edge((x0 + 120 * K, y0 + 24 * K), (x0 + 120 * K, y0 + 60 * K), 4) + \
+        edge((x0 + 120 * K, y0 + 60 * K), (x0 + 24 * K, y0 + 60 * K), 8) + edge((x0 + 24 * K, y0 + 60 * K), (x0 + 24 * K, y0 + 24 * K), 4)
+    pen.shape(rotate(band, cx, cy, deg), CARD_BAND, width=4)
+    lx, ly = rotate([(x0 + 240 * K, y0 + 44 * K)], cx, cy, deg)[0]
+    label(img, "添付文書", 26, lx, ly, deg)
+    for k in range(8):
+        y = y0 + (100 + k * 38) * K
+        right = x0 + w - (30 + (k % 3) * 45) * K
+        pen.line(pen.wobble(rotate(edge((x0 + 30 * K, y), (right, y), 12), cx, cy, deg), 1.0), width=4.5,
+                 color=(150, 150, 150))
+
+
+def magnifier(img, pen: Pen, cx, cy) -> None:
+    r = 105 * K
+    handle = [(cx + r * 0.72, cy + r * 0.72), (cx + r * 1.75, cy + r * 1.75)]
+    hx = [(handle[0][0] + 16 * K, handle[0][1] - 16 * K), (handle[1][0] + 16 * K, handle[1][1] - 16 * K),
+          (handle[1][0] - 16 * K, handle[1][1] + 16 * K), (handle[0][0] - 16 * K, handle[0][1] + 16 * K)]
+    pen.shape(edge(hx[0], hx[1], 12) + edge(hx[1], hx[2], 4) + edge(hx[2], hx[3], 12) + edge(hx[3], hx[0], 4), HANDLE)
+    ring = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))) for a in range(0, 361, 4)]
+    lens = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(lens).ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb(LENS) + (150,))   # 下の文字が透ける
+    img.alpha_composite(lens)
+    pen.d = ImageDraw.Draw(img)
+    pen.line(pen.wobble(ring, 1.4), width=11)
+    pen.line(pen.wobble([(cx - r * 0.55 + k * 3, cy - r * 0.2 - k * 5) for k in range(0, 14)], 0.5), width=6,
+             color=(255, 255, 255))   # つや
+
+
+def make_cover_gimon(day: dt.date, out: Path, seed: int | None = None) -> Path:
+    n = day.toordinal()
+    bg = BACKGROUNDS[(n + 1) % len(BACKGROUNDS)]
+    img = Image.new("RGBA", (W * K, H * K), rgb(bg) + (255,))
+    pen = Pen(ImageDraw.Draw(img), seed if seed is not None else n)
+    insert_sheet(img, pen, 520 * K, 330 * K)
+    pen.d = ImageDraw.Draw(img)
+    magnifier(img, pen, 640 * K, 330 * K)
+    pen.d = ImageDraw.Draw(img)
+    question_bubble(img, pen, 1060 * K, 170 * K)
+    pen.d = ImageDraw.Draw(img)
+    capsule(img, pen, 250 * K, 560 * K, -18)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").resize((W, H), Image.LANCZOS).save(out)
+    return out
+
+
 if __name__ == "__main__":
+    if sys.argv[1] == "gimon":     # python scripts/make_cover.py gimon 2026-10-23 [out.png]
+        print(make_cover_gimon(dt.date.fromisoformat(sys.argv[2]),
+                               Path(sys.argv[3]) if len(sys.argv) > 3 else Path(".local/cover_gimon.png")))
+        sys.exit()
     if sys.argv[1] == "hoken":     # python scripts/make_cover.py hoken 2026-10-28 [out.png]
         print(make_cover_hoken(dt.date.fromisoformat(sys.argv[2]),
                                Path(sys.argv[3]) if len(sys.argv) > 3 else Path(".local/cover_hoken.png")))

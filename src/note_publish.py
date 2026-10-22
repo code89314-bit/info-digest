@@ -14,8 +14,10 @@ note には公式の投稿APIが無いので、Playwright で note 専用のブ�
 note のエディタは画面なし（headless）だと読み込みが終わらないため、ブラウザの画面を出して操作する。
 （ふだんは note_weekly.py が下書きを作ったあとに自動で呼ぶ）
 """
+import contextlib
 import datetime as dt
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -240,6 +242,40 @@ def save_draft(title: str, body_html: str, *, audio: dict | None = None, cover: 
 
     edit_url を渡すと、その下書きを開いて仕上げだけ行う。戻り値は（編集画面のURL, できなかったこと）。
     """
+    with _profile_lock():
+        return _save_draft(title, body_html, audio=audio, cover=cover, headless=headless, edit_url=edit_url)
+
+
+@contextlib.contextmanager
+def _profile_lock(wait: int = 3600):
+    """note 専用のブラウザのプロフィールは同時に1つしか開けない（水曜・土曜の下書きと疑問深堀り Bot が重なったとき）。"""
+    lock = PROFILE.parent / "note_profile.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    start = time.time()
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 3600:   # 落ちたまま残ったロック
+                    lock.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.time() - start > wait:
+                raise RuntimeError("note のブラウザが別の処理で使われたままです")
+            time.sleep(10)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _save_draft(title: str, body_html: str, *, audio: dict | None, cover: str | None, headless: bool,
+                edit_url: str | None) -> tuple[str, list[str]]:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         ctx = _context(p, headless)

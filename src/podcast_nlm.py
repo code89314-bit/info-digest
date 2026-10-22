@@ -156,6 +156,14 @@ class Notebook:
         if picked:
             self._add_items(picked, title)
 
+    @classmethod
+    def attach(cls, pod: dict, nb_id: str) -> "Notebook":
+        """作ってあるノートをつかみ直す（音声をあとで作るとき。Bot を再起動したあとなど）。"""
+        self = cls.__new__(cls)
+        self.pod, self.picked, self.nb, self.loaded = pod, [], nb_id, set()
+        ensure_auth(pod)
+        return self
+
     def research(self, query: str, mode: str = "fast", timeout: int = 1800, fallback: str | None = None,
                  retries: int = 1, wait: float = 60) -> int:
         """NotebookLM のウェブ調査で資料を探して全部取り込む。取り込めた資料の数を返す。
