@@ -25,7 +25,13 @@ from note_weekly import load_style as _load_style
 SECTION = "qa_bot"
 PRIMARY = NEWS_PRIMARY + ["go.jp", "lg.jp", "jstage.jst.go.jp", "pubmed.ncbi.nlm.nih.gov", "cochranelibrary.com",
                           "nccn.org", "esmo.org", "asco.org", "who.int", "bmj.com", "springer.com", "wiley.com",
-                          "sciencedirect.com", "jspm.ne.jp", "jshp.or.jp", "jsco-cpg.jp", "japha.or.jp"]
+                          "sciencedirect.com", "jspm.ne.jp", "jshp.or.jp", "jsco-cpg.jp", "japha.or.jp",
+                          "jsdt.or.jp", "touseki-ikai.or.jp", "kdigo.org", "jsn.or.jp", "chemotherapy.or.jp",
+                          "kansensho.or.jp", "j-circ.or.jp", "jds.or.jp", "idsociety.org", "acpjournals.org",
+                          "ahajournals.org", "oup.com", "karger.com", "elsevier.com", "cell.com", "plos.org",
+                          "frontiersin.org", "mdpi.com", "biomedcentral.com"]
+# ドメインでは決めにくいもの（製薬会社の添付文書・IF など）は、資料の題名にこの語があれば一次資料として扱う
+PRIMARY_TITLE = ["添付文書", "インタビューフォーム", "ガイドライン", "Guideline", "guideline", "審査報告書", "適正使用ガイド"]
 
 PRIVACY_PROMPT = """次は、医療者が日常診療の疑問として書いた文です。これを外部サービス（Google NotebookLM）と公開記事（note）に
 送ってよいかを確認してください。
@@ -41,7 +47,7 @@ PRIVACY_PROMPT = """次は、医療者が日常診療の疑問として書いた
 JSONのみを出力: {{"ok": true または false, "reasons": ["送ってはいけない理由（ok が false のとき）"],
 "rewrite": "個人を特定しうる部分を一般化した疑問文（ok が false のとき）"}}"""
 
-INTERPRET_PROMPT = """あなたは、がん薬物療法に詳しい病院薬剤師の調べものを手伝う編集者です。
+INTERPRET_PROMPT = """あなたは、病院薬剤師の調べものを手伝う編集者です。疑問の分野（腎臓・感染症・がん・制度など）に合った資料を探してください。
 次の日常診療の疑問を、一次資料（添付文書・インタビューフォーム・ガイドライン・論文・行政資料）で確かめるための計画を立ててください。
 
 疑問:
@@ -79,7 +85,9 @@ WRITE_PROMPT = """{digest}
   - paragraphs: 段落を2〜4個。1段落2〜4文。背景・仕組み → 数値や推奨 → 条件・例外・限界 の順に、
     つながりのある文章で書く。本文中で「〇〇学会のガイドライン（2025年版）では」「添付文書の『〜』の項には」のように資料名を出す。
   - bullets: 並べたほうが分かりやすい項目（優先順位・条件の一覧など）があれば箇条書き。無ければ []。
-  - sources: その節で使った資料（上の一覧から。使ったものはすべて。できるだけ2つ以上）。[{{"title": "...", "url": "..."}}]
+  - sources: その節で使った資料（上の一覧から。使ったものはすべて。できるだけ2つ以上）。
+    ［一次資料］の資料を優先する。［解説・二次］の資料（クリニックのブログ・計算サイト・医薬品情報サイトなど）は、
+    一次資料に無い内容の補足にだけ使う。数値・推奨・用量は［一次資料］から引く。[{{"title": "...", "url": "..."}}]
 - wrapup: まとめの節。heading は「結局、〜か」の形（25字以内）。paragraphs は1〜3個で、疑問への答えを資料に沿ってまとめる。
 - unknown: 資料で答えが出なかった論点（1〜3文。無ければ ""）。作文しない。
 - hashtags: 一般名・疾患名・ガイドライン名から4〜7個。「#」は付けない。
@@ -146,6 +154,11 @@ def gather(nb, plan: dict, cfg: dict) -> list[str]:
     return log
 
 
+def is_primary(url: str, title: str = "", domains: list[str] | None = None) -> bool:
+    host = urlparse(url).netloc.lower()
+    return is_primary_host(host, domains or PRIMARY) or any(w in (title or "") for w in PRIMARY_TITLE)
+
+
 def _strs(xs) -> list[str]:
     return [clean(x) for x in (xs if isinstance(xs, list) else [xs]) if clean(x)]
 
@@ -159,7 +172,8 @@ def write(nb, style: dict, question: str, plan: dict) -> dict:
         digest=(style.get("prompt_digest") or "").strip(), rules=rules, question=question,
         interpretation=plan["interpretation"] or "（なし）", max_points=max_points,
         points="\n".join(f"- {p}" for p in plan["points"]),
-        sources="\n".join(f"- {s['title']} — {s['url']}" for s in srcs) or "（URL の一覧なし）",
+        sources="\n".join(f"- {'［一次資料］' if is_primary(s['url'], s['title']) else '［解説・二次］'}"
+                          f"{s['title']} — {s['url']}" for s in srcs) or "（URL の一覧なし）",
         example=((style.get("section_block") or {}).get("format_example") or "").strip())))
     titles = {s["url"]: s["title"] for s in srcs}
     sections = []
@@ -312,9 +326,9 @@ def check(doc: dict, style: dict, primary: list[str] | None = None) -> list[str]
     for s in doc["sections"]:
         if not s["sources"]:
             memo.append(f"「{s['heading']}」：出典がありません")
-        for _, u in s["sources"]:
+        for t, u in s["sources"]:
             host = urlparse(u).netloc.lower()
-            if host and not is_primary_host(host, primary or PRIMARY):
+            if host and not is_primary(u, t, primary):
                 memo.append(f"「{s['heading']}」：一次資料のサイトではない出典があります（{host}）。原文を確認してください")
     if len(doc["links"]) < 3:
         memo.append(f"参考の資料が {len(doc['links'])} 件だけです。足りない論点は一次資料で補ってください")
