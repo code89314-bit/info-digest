@@ -23,7 +23,6 @@ from note_weekly import EMOJI, PRIMARY as NEWS_PRIMARY, clean, is_primary_host, 
 from note_weekly import load_style as _load_style
 
 SECTION = "qa_bot"
-LABELS = [("conclusion", "結論"), ("evidence", "根拠"), ("note", "注意"), ("source", "出典")]
 PRIMARY = NEWS_PRIMARY + ["go.jp", "lg.jp", "jstage.jst.go.jp", "pubmed.ncbi.nlm.nih.gov", "cochranelibrary.com",
                           "nccn.org", "esmo.org", "asco.org", "who.int", "bmj.com", "springer.com", "wiley.com",
                           "sciencedirect.com", "jspm.ne.jp", "jshp.or.jp", "jsco-cpg.jp", "japha.or.jp"]
@@ -51,7 +50,8 @@ INTERPRET_PROMPT = """あなたは、がん薬物療法に詳しい病院薬剤�
 - title: 記事タイトル用の短い名詞句（25字以内）。例「腎機能低下時のカペシタビン減量」
 - interpretation: 疑問の解釈（何を知りたいのか、暗黙の前提）。2〜3文。
 - points: 確かめる論点。3〜5個。それぞれ1文の問い。
-- queries: ウェブ検索語。3〜5個。日本語（添付文書・ガイドライン・厚労省）と英語（論文・海外ガイドライン）を混ぜる。各10語以内。
+- queries: ウェブ検索語。4〜6個。各10語以内。資料の種類ごとに分ける:
+  日本の添付文書・インタビューフォーム（PMDA）、国内学会のガイドライン、厚労省・行政資料、英語の論文・海外ガイドライン（PubMed・KDIGO・NCCN など）。
 - research: NotebookLM のウェブ調査への指示（日本語、1〜2文。探す資料の種類を具体的に）。
 
 JSONのみを出力:
@@ -63,25 +63,31 @@ WRITE_PROMPT = """{digest}
 {question}
 
 疑問の解釈（参考）: {interpretation}
-確かめる論点（この順に。資料で答えが確かめられるものだけを書く。最大{max_points}個）:
+確かめる論点（この順に節を立てる。資料で確かめられるものだけ。最大{max_points}節）:
 {points}
 
 資料の一覧（出典の url はここから選ぶ）:
 {sources}
 
-書き方の見本（この文体・文末で書く）:
+書き方の見本（この文体・段落の流れで書く）:
 {example}
 
-- heading: 論点の小見出し（30字以内）。
-- conclusion / evidence / note: それぞれ1〜2文。1文40字以内。note は資料に無ければ ""。
-- source: 出典の表記（添付文書・ガイドライン・論文の書誌）。url: 上の一覧のURL。
-- three_lines: 「結論（3行）」。疑問への答えを、資料にあることだけで3つ、それぞれ30字以内の1文で。
+- lead: 導入の段落。2〜4文。この疑問がどんな場面で出てくるか（一般論として）と、この記事で何を整理するか。体験談は作らない。
+- three_lines: 「この記事のポイント」。疑問への答えを資料にあることだけで3つ、それぞれ35字以内の1文で。
+- sections: 論点ごとの節。
+  - heading: 小見出し（25字以内）。問いか結論の形。
+  - paragraphs: 段落を2〜4個。1段落2〜4文。背景・仕組み → 数値や推奨 → 条件・例外・限界 の順に、
+    つながりのある文章で書く。本文中で「〇〇学会のガイドライン（2025年版）では」「添付文書の『〜』の項には」のように資料名を出す。
+  - bullets: 並べたほうが分かりやすい項目（優先順位・条件の一覧など）があれば箇条書き。無ければ []。
+  - sources: その節で使った資料（上の一覧から。使ったものはすべて。できるだけ2つ以上）。[{{"title": "...", "url": "..."}}]
+- wrapup: まとめの節。heading は「結局、〜か」の形（25字以内）。paragraphs は1〜3個で、疑問への答えを資料に沿ってまとめる。
 - unknown: 資料で答えが出なかった論点（1〜3文。無ければ ""）。作文しない。
 - hashtags: 一般名・疾患名・ガイドライン名から4〜7個。「#」は付けない。
 
 JSONのみを出力:
-{{"three_lines": ["...", "...", "..."], "unknown": "...", "hashtags": ["..."],
-  "points": [{{"heading": "...", "conclusion": "...", "evidence": "...", "note": "...", "source": "...", "url": "..."}}]}}"""
+{{"lead": "...", "three_lines": ["...", "...", "..."],
+  "sections": [{{"heading": "...", "paragraphs": ["...", "..."], "bullets": [], "sources": [{{"title": "...", "url": "..."}}]}}],
+  "wrapup": {{"heading": "...", "paragraphs": ["..."]}}, "unknown": "...", "hashtags": ["..."]}}"""
 
 
 def load_style(cfg: dict) -> dict:
@@ -109,7 +115,7 @@ def interpret(text: str, cfg: dict) -> dict:
     got = strata_obj(INTERPRET_PROMPT.format(text=text), cfg)
     title = clean(got.get("title")) or text[:25]
     points = [clean(p) for p in got.get("points") or [] if clean(p)][:6]
-    queries = [clean(q) for q in got.get("queries") or [] if clean(q)][:5]
+    queries = [clean(q) for q in got.get("queries") or [] if clean(q)][:6]
     return {"title": title[:30], "interpretation": clean(got.get("interpretation")),
             "points": points or [text], "queries": queries or [title],
             "research": clean(got.get("research")) or f"{title}について、添付文書・ガイドライン・論文などの一次資料"}
@@ -136,30 +142,46 @@ def gather(nb, plan: dict, cfg: dict) -> list[str]:
     if extra:
         loaded = nb.add_urls(extra)
         log.append(f"検索で一次資料を追加: {len(loaded)}/{len(extra)} 件")
+        log += [f"読み込めなかった資料: {u}" for u in extra if u not in loaded]
     return log
+
+
+def _strs(xs) -> list[str]:
+    return [clean(x) for x in (xs if isinstance(xs, list) else [xs]) if clean(x)]
 
 
 def write(nb, style: dict, question: str, plan: dict) -> dict:
     rules = "【守ること】\n" + "".join(f"- {r}\n" for r in ((style.get("rules") or {}).get("must") or []))
     issue = style.get("issue") or {}
-    max_points = int(issue.get("max_points", 6))
+    max_points = int(issue.get("max_points", 5))
     srcs = [s for s in (nb.sources() if hasattr(nb, "sources") else []) if s.get("url")]
     data = parse_obj(nb.ask(WRITE_PROMPT.format(
         digest=(style.get("prompt_digest") or "").strip(), rules=rules, question=question,
         interpretation=plan["interpretation"] or "（なし）", max_points=max_points,
         points="\n".join(f"- {p}" for p in plan["points"]),
         sources="\n".join(f"- {s['title']} — {s['url']}" for s in srcs) or "（URL の一覧なし）",
-        example=((style.get("point_block") or {}).get("format_example") or "").strip())))
-    points = []
-    for p in data.get("points") or []:
-        if isinstance(p, dict) and clean(p.get("heading")) and clean(p.get("conclusion")):
-            points.append({"heading": clean(p.get("heading")), **{k: clean(p.get(k)) for k, _ in LABELS},
-                           "url": clean(p.get("url"))})
-    if not points:
+        example=((style.get("section_block") or {}).get("format_example") or "").strip())))
+    titles = {s["url"]: s["title"] for s in srcs}
+    sections = []
+    for s in data.get("sections") or []:
+        if not isinstance(s, dict) or not clean(s.get("heading")) or not _strs(s.get("paragraphs")):
+            continue
+        refs = []
+        for r in s.get("sources") or []:
+            url = clean(r.get("url")) if isinstance(r, dict) else clean(r)
+            if url and url not in [u for _, u in refs]:
+                title = clean(r.get("title")) if isinstance(r, dict) else ""
+                refs.append((title or titles.get(url) or url, url))
+        sections.append({"heading": clean(s["heading"]), "paragraphs": _strs(s["paragraphs"]),
+                         "bullets": _strs(s.get("bullets") or []), "sources": refs})
+    if not sections:
         raise RuntimeError("NotebookLM から答えを得られませんでした（資料が見つからなかった可能性）")
-    return {"points": points[:max_points], "unknown": clean(data.get("unknown")),
-            "three_lines": [clean(x) for x in data.get("three_lines") or [] if clean(x)][:3] or
-            [p["conclusion"] for p in points[:3]],
+    wrap = data.get("wrapup") if isinstance(data.get("wrapup"), dict) else {}
+    return {"lead": clean(data.get("lead")), "sections": sections[:max_points],
+            "wrapup": {"heading": clean(wrap.get("heading")) or "結局どうなのか",
+                       "paragraphs": _strs(wrap.get("paragraphs") or [])},
+            "unknown": clean(data.get("unknown")),
+            "three_lines": _strs(data.get("three_lines") or [])[:3] or [s["paragraphs"][0] for s in sections[:3]],
             "hashtags": [clean(h).lstrip("#＃") for h in data.get("hashtags") or [] if clean(h)]}
 
 
@@ -171,20 +193,22 @@ TOC_NOTE = "※ここに note の目次を挿入"
 def build(style: dict, question: str, plan: dict, body: dict, audio_name: str) -> dict:
     issue, pod, opening = style.get("issue") or {}, style.get("podcast") or {}, style.get("opening_notice") or {}
     links, seen = [], set()
-    for p in body["points"]:
-        if p["url"] and p["url"] not in seen:
-            seen.add(p["url"])
-            links.append((p["source"] or p["url"], p["url"]))
+    for s in body["sections"]:
+        for t, u in s["sources"]:
+            if u not in seen:
+                seen.add(u)
+                links.append((t, u))
     fixed = list((style.get("hashtags") or {}).get("fixed") or [])
     return {"title": (issue.get("title") or "【ギモン深堀り】{title}").replace("{title}", plan["title"]),
             "opening_heading": opening.get("heading") or "", "opening": (opening.get("body") or "").strip(),
             "question_heading": issue.get("question_heading") or "今回のギモン", "question": question,
-            "three_heading": issue.get("three_lines_heading") or "結論（3行）", "three_lines": body["three_lines"],
+            "lead": body["lead"],
+            "three_heading": issue.get("three_lines_heading") or "この記事のポイント", "three_lines": body["three_lines"],
             "audio": audio_name if pod.get("enabled", True) else None,
             "audio_heading": pod.get("heading") or "音声版", "audio_body": (pod.get("body") or "").strip(),
-            "points_heading": issue.get("points_heading") or "深堀り", "points": body["points"],
+            "sections": body["sections"], "wrapup": body["wrapup"],
             "unknown_heading": issue.get("unknown_heading") or "資料で分からなかったこと", "unknown": body["unknown"],
-            "links_heading": issue.get("links_heading") or "根拠資料（まとめ）", "links": links,
+            "links_heading": issue.get("links_heading") or "参考", "links": links,
             "afterword_heading": issue.get("afterword_heading") or "編集後記", "afterword": issue.get("afterword") or "",
             "footer": (style.get("fixed_footer") or "").strip(),
             "hashtags": list(dict.fromkeys(t.replace(" ", "") for t in fixed + body["hashtags"] if t))[:12]}
@@ -195,17 +219,25 @@ def to_markdown(doc: dict, memo: list[str]) -> str:
     if doc["opening"]:
         md += [f"> **{doc['opening_heading']}**  "] + [f"> {x}  " for x in doc["opening"].splitlines()] + [""]
     md += [f"**{doc['question_heading']}**", ""] + [f"> {x}  " for x in doc["question"].splitlines()] + [""]
+    if doc["lead"]:
+        md += [doc["lead"], ""]
     md += [f"**{doc['three_heading']}**", ""] + [f"- {x}" for x in doc["three_lines"]] + [""]
     if doc["audio"]:
         md += [f"## {doc['audio_heading']}", "", doc["audio_body"].replace("\n", "  \n"), "",
                AUDIO_NOTE.format(doc["audio"]), ""]
-    md += [TOC_NOTE, "", f"## {doc['points_heading']}", ""]
-    for p in doc["points"]:
-        md.append(f"### {p['heading']}")
-        for k, label in LABELS:
-            if p[k]:
-                md.append(f"**{label}**　" + (f"[{p[k]}]({p['url']})" if k == "source" and p["url"] else p[k]) + "  ")
-        md.append("")
+    md += [TOC_NOTE, ""]
+    for s in doc["sections"]:
+        md += [f"## {s['heading']}", ""]
+        for p in s["paragraphs"]:
+            md += [p, ""]
+        if s["bullets"]:
+            md += [f"- {b}" for b in s["bullets"]] + [""]
+        if s["sources"]:
+            md += ["※出典：" + "／".join(f"[{t}]({u})" for t, u in s["sources"]), ""]
+    if doc["wrapup"]["paragraphs"]:
+        md += [f"## {doc['wrapup']['heading']}", ""]
+        for p in doc["wrapup"]["paragraphs"]:
+            md += [p, ""]
     if doc["unknown"]:
         md += [f"## {doc['unknown_heading']}", "", doc["unknown"], ""]
     md += [f"## {doc['links_heading']}", ""] + [f"- {t}：{u}" for t, u in doc["links"]]
@@ -221,17 +253,24 @@ def body_html(doc: dict) -> str:
     br = lambda t: "<br>".join(e(x) for x in t.splitlines())   # noqa: E731
     b = [(f"<blockquote><p><strong>{e(doc['opening_heading'])}</strong><br>{br(doc['opening'])}</p></blockquote>"
           if doc["opening"] else ""),
-         f"<p><strong>{e(doc['question_heading'])}</strong></p>", f"<p>{br(doc['question'])}</p>",
+         f"<p><strong>{e(doc['question_heading'])}</strong></p>",
+         f"<blockquote><p>{br(doc['question'])}</p></blockquote>",
+         f"<p>{e(doc['lead'])}</p>" if doc["lead"] else "",
          f"<p><strong>{e(doc['three_heading'])}</strong></p>",
          "<ul>" + "".join(f"<li>{e(x)}</li>" for x in doc["three_lines"]) + "</ul>"]
     if doc["audio"]:
         b += [f"<h2>{e(doc['audio_heading'])}</h2>", f"<p>{br(doc['audio_body'])}</p>",
               f"<p>{e(AUDIO_NOTE.format(doc['audio']))}</p>"]
-    b += [f"<p>{TOC_NOTE}</p>", f"<h2>{e(doc['points_heading'])}</h2>"]
-    for p in doc["points"]:
-        rows = [f"<strong>{label}</strong>　" + (f'<a href="{e(p["url"])}">{e(p[k])}</a>' if k == "source" and p["url"]
-                                                else e(p[k])) for k, label in LABELS if p[k]]
-        b += [f"<h3>{e(p['heading'])}</h3>", "<p>" + "<br>".join(rows) + "</p>"]
+    b.append(f"<p>{TOC_NOTE}</p>")
+    for s in doc["sections"]:
+        b.append(f"<h2>{e(s['heading'])}</h2>")
+        b += [f"<p>{e(p)}</p>" for p in s["paragraphs"]]
+        if s["bullets"]:
+            b.append("<ul>" + "".join(f"<li>{e(x)}</li>" for x in s["bullets"]) + "</ul>")
+        if s["sources"]:
+            b.append("<p>※出典：" + "／".join(f'<a href="{e(u)}">{e(t)}</a>' for t, u in s["sources"]) + "</p>")
+    if doc["wrapup"]["paragraphs"]:
+        b += [f"<h2>{e(doc['wrapup']['heading'])}</h2>"] + [f"<p>{e(p)}</p>" for p in doc["wrapup"]["paragraphs"]]
     if doc["unknown"]:
         b += [f"<h2>{e(doc['unknown_heading'])}</h2>", f"<p>{e(doc['unknown'])}</p>"]
     b += [f"<h2>{e(doc['links_heading'])}</h2>",
@@ -254,17 +293,15 @@ def to_html(doc: dict, memo: list[str]) -> str:
 
 def check(doc: dict, style: dict, primary: list[str] | None = None) -> list[str]:
     memo = []
-    max_chars = int((style.get("sentences") or {}).get("max_chars", 40))
+    max_chars = int((style.get("sentences") or {}).get("max_chars", 60))
     forbidden = (style.get("voice") or {}).get("forbidden_phrases") or []
-    texts = [(f"結論（3行）{n + 1}", x) for n, x in enumerate(doc["three_lines"])]
-    for p in doc["points"]:
-        texts.append((f"「{p['heading']}」小見出し", p["heading"]))
-        texts += [(f"「{p['heading']}」{label}", p[k]) for k, label in LABELS if k != "source" and p[k]]
+    texts = [("導入", doc["lead"])] + [(f"ポイント{n + 1}", x) for n, x in enumerate(doc["three_lines"])]
+    for s in doc["sections"] + [doc["wrapup"]]:
+        texts += [(f"「{s['heading']}」", p) for p in s["paragraphs"] + s.get("bullets", [])]
     for where, text in texts:
-        if not where.endswith("小見出し"):
-            for s in sentences(text):
-                if len(s.rstrip("。")) + 1 > max_chars:
-                    memo.append(f"{where}：{max_chars}字超（{len(s)}字）「{s}」")
+        for x in sentences(text):
+            if len(x.rstrip("。")) + 1 > max_chars:
+                memo.append(f"{where}：{max_chars}字超（{len(x)}字）「{x}」")
         for w in forbidden:
             if w in text:
                 memo.append(f"{where}：使わない語「{w}」")
@@ -272,12 +309,15 @@ def check(doc: dict, style: dict, primary: list[str] | None = None) -> list[str]
             memo.append(f"{where}：だ・である調")
         if EMOJI.search(text) or "→" in text or re.search("[!！]", text):
             memo.append(f"{where}：絵文字・「→」・感嘆符")
-    for p in doc["points"]:
-        host = urlparse(p["url"]).netloc.lower()
-        if not host:
-            memo.append(f"「{p['heading']}」：出典のURLがありません")
-        elif not is_primary_host(host, primary or PRIMARY):
-            memo.append(f"「{p['heading']}」：出典が一次資料のサイトではありません（{host}）。原文を確認してください")
+    for s in doc["sections"]:
+        if not s["sources"]:
+            memo.append(f"「{s['heading']}」：出典がありません")
+        for _, u in s["sources"]:
+            host = urlparse(u).netloc.lower()
+            if host and not is_primary_host(host, primary or PRIMARY):
+                memo.append(f"「{s['heading']}」：一次資料のサイトではない出典があります（{host}）。原文を確認してください")
+    if len(doc["links"]) < 3:
+        memo.append(f"参考の資料が {len(doc['links'])} 件だけです。足りない論点は一次資料で補ってください")
     return memo
 
 

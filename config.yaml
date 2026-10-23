@@ -480,9 +480,10 @@ qa_bot:
   style_file: style/gimon.yaml
   # Bot の持ち主（開発者ポータルの Owner）以外に受け付ける Discord のユーザーID
   owner_ids: []
-  research_mode: fast
+  # ウェブ調査の深さ（deep は資料が多いが10分ほど長くかかる。fast は数分）
+  research_mode: deep
   # 検索で足す一次資料の数（ウェブ調査の資料とは別）
-  max_extra_sources: 8
+  max_extra_sources: 10
   cover_image: true
   out_dir: .local/qa
   # NotebookLM の音声は1日3本（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠

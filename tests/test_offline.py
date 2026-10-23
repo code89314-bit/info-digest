@@ -735,12 +735,16 @@ class QANB:
 
     def ask(self, q):
         QA_LOG.append(q)
-        return json.dumps({"three_lines": ["CrCl 30未満は禁忌です。"], "unknown": "透析時のデータはありません。",
-                           "hashtags": ["カペシタビン"], "points": [
-                               {"heading": "CrCl 30未満", "conclusion": "禁忌です。", "evidence": "添付文書の禁忌に記載されている。",
-                                "note": "", "source": "添付文書", "url": "https://www.pmda.go.jp/pi.pdf"},
-                               {"heading": "ブログ", "conclusion": "減量します。", "evidence": "", "note": "", "source": "x",
-                                "url": "https://blog.example/a"}]}, ensure_ascii=False)
+        return json.dumps({"lead": "腎機能が落ちた患者で用量に迷う場面があります。", "three_lines": ["CrCl 30未満は禁忌です。"],
+                           "unknown": "透析時のデータはありません。", "hashtags": ["カペシタビン"],
+                           "sections": [
+                               {"heading": "CrCl 30未満", "paragraphs": ["添付文書では禁忌です。", "減量の目安が示されている。"],
+                                "bullets": ["30〜50は75%量"], "sources": [{"title": "添付文書", "url": "https://www.pmda.go.jp/pi.pdf"}]},
+                               {"heading": "ブログ", "paragraphs": ["減量します。"],
+                                "sources": [{"url": "https://blog.example/a"}]},
+                               {"heading": "空", "paragraphs": []}],
+                           "wrapup": {"heading": "結局、減量は必要か", "paragraphs": ["CrCl 30未満では使いません。"]}},
+                          ensure_ascii=False)
 
     def close(self):
         QA_LOG.append("closed")
@@ -752,10 +756,15 @@ assert r["status"] == "done" and r["doc"]["title"] == "【ギモン深堀り】�
 assert QA_LOG[1] == ["https://pubmed.ncbi.nlm.nih.gov/123/"]           # 一次資料のサイトだけ・既にある資料は足さない
 assert "https://pubmed.ncbi.nlm.nih.gov/123/" in QA_LOG[2] and "closed" not in QA_LOG   # ノートは音声まで残す
 memo = "\n".join(r["memo"])
-assert "根拠：だ・である調" in memo and "一次資料のサイトではありません（blog.example）" in memo
+assert "「CrCl 30未満」：だ・である調" in memo and "一次資料のサイトではない出典があります（blog.example）" in memo
+assert "参考の資料が 2 件だけです" in memo and len(r["doc"]["sections"]) == 2      # 段落の無い節は落とす
 md = r["md"].read_text(encoding="utf-8")
-assert md.index("今回のギモン") < md.index("結論（3行）") < md.index("ここに音声ファイル「t1.mp3」") < md.index("## 深堀り")
+assert md.index("今回のギモン") < md.index("腎機能が落ちた") < md.index("この記事のポイント") <     md.index("ここに音声ファイル「t1.mp3」") < md.index("## CrCl 30未満") < md.index("## 結局、減量は必要か") < md.index("## 参考")
+assert "※出典：[添付文書](https://www.pmda.go.jp/pi.pdf)" in md and "- 30〜50は75%量" in md
 assert "## 資料で分からなかったこと" in md and "個別の患者さんへの判断を示すものではありません" in md
+assert "<h2>CrCl 30未満</h2>" in qa_deep.body_html(r["doc"])
+import qa_bot  # noqa: E402
+assert qa_bot.summary_embeds(r)[1].title == "参考（2件）"
 # 音声の枠: 1日3本、朝7:30までは2本、水曜23:00までは1本を空けておく
 QCFG = {"audio_reserve": [{"until": "07:30", "n": 2}, {"weekday": 2, "until": "23:00", "n": 1}]}
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6, 0), used=0) == 1

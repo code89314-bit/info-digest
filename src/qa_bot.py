@@ -45,13 +45,13 @@ def summary_embeds(res: dict) -> list[discord.Embed]:
     e1 = discord.Embed(title=f"🔎 {doc['title']}"[:256], color=0x1E3A5F,
                        description=(f"**解釈**　{plan['interpretation']}\n\n**{doc['three_heading']}**\n"
                                     + "\n".join(f"- {x}" for x in doc["three_lines"]))[:4000])
-    for p in doc["points"][:6]:
-        val = f"{p['conclusion']}\n-# {p['source'] or ''}"
-        e1.add_field(name=p["heading"][:256], value=val[:1024], inline=False)
+    for s in (doc["sections"] + ([doc["wrapup"]] if doc["wrapup"]["paragraphs"] else []))[:6]:
+        val = s["paragraphs"][0] + "".join(f"\n-# {t}" for t, _ in s.get("sources", [])[:3])
+        e1.add_field(name=s["heading"][:256], value=val[:1024], inline=False)
     if doc["unknown"]:
         e1.add_field(name="資料で分からなかったこと", value=doc["unknown"][:1024], inline=False)
     links = "\n".join(f"- [{t[:80]}]({u})" for t, u in doc["links"][:10])
-    e2 = discord.Embed(title="根拠資料", description=links[:4000] or "（なし）", color=0x5B7896)
+    e2 = discord.Embed(title=f"参考（{len(doc['links'])}件）", description=links[:4000] or "（なし）", color=0x5B7896)
     return [e1, e2]
 
 
