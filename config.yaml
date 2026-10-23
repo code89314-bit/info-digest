@@ -397,7 +397,7 @@ note_weekly:
   style_file: style/jibun_yakkyoku.yaml
   # 通知先の Webhook URL を入れる環境変数の名前（値は .env に書く）
   webhook_env: DISCORD_WEBHOOK_NOTE
-  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png?v=2
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/note.png?v=1
   # 何日分の記事を使うか（作る日を含む）
   lookback_days: 7
   # NotebookLM に読ませる最大記事数（スコアの高い順）
@@ -443,7 +443,7 @@ note_hoken:
   title: note 下書き（水曜）
   style_file: style/hoken_kouhi.yaml
   webhook_env: DISCORD_WEBHOOK_NOTE
-  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/onco.png?v=2
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/note.png?v=1
   # 何日前までの行政資料を候補にするか
   lookback_days: 45
   # 同じ資料を使わない期間（週）

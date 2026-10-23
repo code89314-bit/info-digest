@@ -161,8 +161,30 @@ def gimon() -> None:
     finish(fg, "gimon.png")
 
 
+def note() -> None:
+    """note 下書き: 白い原稿（ネイビーの行）と、斜めの鉛筆（アンバーの軸・コーラルの消しゴム）。"""
+    fg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fg)
+    x0, y0, x1, y1 = 280, 230, 660, 790
+    d.rounded_rectangle([x0, y0, x1, y1], radius=36, fill=rgb(WHITE), outline=rgb(NAVY), width=26)
+    for k in range(6):
+        y = y0 + 95 + k * 72
+        d.rounded_rectangle([x0 + 60, y - 10, x1 - 60 - (k % 2) * 90, y + 10], radius=10, fill=rgb(STEEL))
+    pen = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    p = ImageDraw.Draw(pen)
+    cx, w = 512, 92
+    p.rounded_rectangle([cx - w // 2, 150, cx + w // 2, 230], radius=24, fill=rgb(CORAL))      # 消しゴム
+    p.rectangle([cx - w // 2, 222, cx + w // 2, 250], fill=rgb(STEEL))
+    p.rectangle([cx - w // 2, 250, cx + w // 2, 700], fill=rgb(AMBER))                          # 軸
+    p.polygon([(cx - w // 2, 700), (cx + w // 2, 700), (cx, 830)], fill=rgb("#FBE3C0"))         # 削った木
+    p.polygon([(cx - 16, 785), (cx + 16, 785), (cx, 830)], fill=rgb(NAVY))                      # 芯
+    pen = pen.rotate(-35, resample=Image.BICUBIC, center=(512, 512), translate=(150, -20))
+    fg.alpha_composite(pen)
+    finish(fg, "note.png")
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    targets = sys.argv[1:] or ["onco", "learn", "ai", "ai_global", "gimon"]
+    targets = sys.argv[1:] or ["onco", "learn", "ai", "ai_global", "gimon", "note"]
     for name in targets:
         globals()[name]()
