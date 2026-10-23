@@ -183,8 +183,35 @@ def note() -> None:
     finish(fg, "note.png")
 
 
+def server() -> None:
+    """サーバーのアイコン（医療情報薬剤師サーバー）: ネイビーの十字の上に、斜めのカプセル（白×コーラル）と音波。"""
+    fg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fg)
+    cx, cy, a, b = 512, 512, 330, 115
+    d.rounded_rectangle([cx - b, cy - a, cx + b, cy + a], radius=40, fill=rgb(NAVY))
+    d.rounded_rectangle([cx - a, cy - b, cx + a, cy + b], radius=40, fill=rgb(NAVY))
+    cap = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    c = ImageDraw.Draw(cap)
+    w, h = 420, 150
+    box = [cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2]
+    c.rounded_rectangle(box, radius=h // 2, fill=rgb(WHITE))
+    right = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ImageDraw.Draw(right).rounded_rectangle(box, radius=h // 2, fill=rgb(CORAL))
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).rectangle([cx, 0, S, S], fill=255)
+    cap.paste(right, (0, 0), Image.composite(right.split()[3], mask, mask))
+    c.rectangle([cx - 6, cy - h // 2 + 4, cx + 6, cy + h // 2 - 4], fill=rgb(CORAL_DARK))
+    c.rounded_rectangle([cx - w // 2 + 50, cy - h // 2 + 30, cx - 40, cy - h // 2 + 50], radius=10, fill=rgb("#E8EEF5"))  # つや
+    cap = cap.rotate(35, resample=Image.BICUBIC, center=(cx, cy))
+    fg.alpha_composite(cap)
+    for r, col in ((400, TEAL), (460, AMBER)):
+        for a0, a1 in ((-28, 28), (152, 208)):
+            d.arc([cx - r, cy - r, cx + r, cy + r], a0, a1, fill=rgb(col), width=26)
+    finish(fg, "server.png")
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    targets = sys.argv[1:] or ["onco", "learn", "ai", "ai_global", "gimon", "note"]
+    targets = sys.argv[1:] or ["onco", "learn", "ai", "ai_global", "gimon", "note", "server"]
     for name in targets:
         globals()[name]()
