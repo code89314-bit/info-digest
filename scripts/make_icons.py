@@ -4,11 +4,17 @@
 どちらも「クリーム×ネイビー」配色（暗い Discord の中で目立つ）で、左右に podcast の音波を入れた姉妹デザイン。
   onco.png  : カプセルがマイクになっている（ニュースを podcast で届ける）
   learn.png : 開いた本（学習番組）
+  ai.png        : AI チップ（ローカルAIダイジェスト）
+  ai_global.png : 地球と AI チップ（海外AIダイジェスト）
+  gimon.png     : 虫めがねと「?」（ギモン深堀り Bot。Bot のアイコンは API で設定）
 """
 import math
+import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+FONT = "C:/Windows/Fonts/YuGothB.ttc"
 
 OUT = Path(__file__).resolve().parents[1] / "assets"
 S = 1024          # 描画サイズ（最後に 512 に縮小してなめらかにする）
@@ -99,7 +105,64 @@ def learn() -> None:
     finish(fg, "learn.png")
 
 
+def chip(d: ImageDraw.ImageDraw, cx: int, cy: int, size: int, text_size: int) -> None:
+    """AI チップ（ネイビーの本体・コーラルの足・白い「AI」）。"""
+    s = size // 2
+    pin, gap, w = size // 6, size // 4, max(10, size // 14)
+    for k in (-1, 0, 1):
+        o = k * gap
+        for (x0, y0, x1, y1) in ((cx + o - w, cy - s - pin, cx + o + w, cy - s), (cx + o - w, cy + s, cx + o + w, cy + s + pin),
+                                 (cx - s - pin, cy + o - w, cx - s, cy + o + w), (cx + s, cy + o - w, cx + s + pin, cy + o + w)):
+            d.rounded_rectangle([x0, y0, x1, y1], radius=w // 2, fill=rgb(CORAL))
+    d.rounded_rectangle([cx - s, cy - s, cx + s, cy + s], radius=size // 8, fill=rgb(NAVY))
+    d.rounded_rectangle([cx - s + w * 2, cy - s + w * 2, cx + s - w * 2, cy + s - w * 2], radius=size // 12,
+                        outline=rgb(STEEL), width=max(6, w // 2))
+    d.text((cx, cy + 4), "AI", font=ImageFont.truetype(FONT, text_size), fill=rgb(WHITE), anchor="mm")
+
+
+def ai() -> None:
+    """ローカルAIダイジェスト: AI チップ。"""
+    fg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fg)
+    chip(d, 512, 512, 330, 150)
+    waves(d, 512, 512)
+    finish(fg, "ai.png")
+
+
+def ai_global() -> None:
+    """海外AIダイジェスト: 地球（ティールの海・ネイビーの経緯線）の右下に AI チップ。"""
+    fg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fg)
+    cx, cy, r = 470, 470, 220
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb(TEAL))
+    for w in (0.5,):
+        d.ellipse([cx - r * w, cy - r, cx + r * w, cy + r], outline=rgb(NAVY), width=18)
+    d.line([(cx, cy - r), (cx, cy + r)], fill=rgb(NAVY), width=18)
+    for y in (-0.5, 0, 0.5):
+        hw = r * math.sqrt(1 - y * y)
+        d.line([(cx - hw, cy + r * y), (cx + hw, cy + r * y)], fill=rgb(NAVY), width=18)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=rgb(NAVY), width=26)
+    d.ellipse([655 - 150, 655 - 150, 655 + 150, 655 + 150], fill=rgb(BG[0]))   # チップのまわりを抜く
+    chip(d, 655, 655, 190, 86)
+    finish(fg, "ai_global.png")
+
+
+def gimon() -> None:
+    """ギモン深堀り（Discord Bot）: 虫めがねの中に「？」。"""
+    fg = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fg)
+    cx, cy, r = 450, 450, 200
+    hx0, hx1 = cx + int(r * 0.72), cx + int(r * 1.55)
+    d.line([(hx0, hx0), (hx1, hx1)], fill=rgb(CORAL), width=80)
+    d.ellipse([hx1 - 40, hx1 - 40, hx1 + 40, hx1 + 40], fill=rgb(CORAL))
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb(WHITE), outline=rgb(NAVY), width=44)
+    d.text((cx, cy + 10), "?", font=ImageFont.truetype(FONT, 260), fill=rgb(NAVY), anchor="mm")
+    d.arc([cx - r + 50, cy - r + 50, cx + r - 50, cy + r - 50], 200, 250, fill=rgb(TEAL), width=18)   # つや
+    finish(fg, "gimon.png")
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    onco()
-    learn()
+    targets = sys.argv[1:] or ["onco", "learn", "ai", "ai_global", "gimon"]
+    for name in targets:
+        globals()[name]()

@@ -18,6 +18,8 @@ drug_supply:
 ai_digest:
   # Discordに表示する名前
   title: ローカルAIダイジェスト
+  # Discord に表示するアイコン（assets/ai.png。作り直すときは scripts/make_icons.py）
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/ai.png?v=1
   # Claude API のモデル（下の llm.provider を anthropic にしたときだけ使用。ANTHROPIC_API_KEY が必要）
   model: claude-haiku-5-5
 
@@ -108,6 +110,8 @@ ai_digest:
 ai_global:
   # Discordに表示する名前
   title: 海外AIダイジェスト
+  # Discord に表示するアイコン（assets/ai_global.png。作り直すときは scripts/make_icons.py）
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/ai_global.png?v=1
   # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
   webhook_env: DISCORD_WEBHOOK_AI_GLOBAL
   # 1回のダイジェストの最大件数
