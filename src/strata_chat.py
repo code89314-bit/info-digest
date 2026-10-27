@@ -1,12 +1,12 @@
 """Discord で Strata と会話する（検索つき）。Bot 本体は src/qa_bot.py（同じ Bot が別チャンネルで受ける）。
 
-流れ: 会話の流れを見て、検索が要るか・検索語を Strata に決めさせる（考えさせない・JSON）
-      → 自宅の SearXNG（config の strata_chat.searxng_url）で検索 → 上位のページ本文を少し読む
-      → ペルソナ（style/persona.yaml）として、検索結果をもとに答える → 出典を添える。
+流れ: ペルソナ（style/persona.yaml）として、ふだんは調べずに会話する（reply）。
+      調べた方がよい話題のときだけ、キャラクターが「調べてみる」と言って、最後の行に [[検索: 語1 | 語2]] を書く
+      → Bot はその一言を先に投稿 → 自宅の SearXNG（config の strata_chat.searxng_url）で検索し、
+      上位のページ本文を少し読んで、もう一度キャラクターとして答える（research）→ 出典を添える。
 検索語は外部の検索エンジンに送られるので、患者・職員を特定しうる語は検索語に入れさせない。
 """
 import html
-import json
 import os
 import re
 from html.parser import HTMLParser
@@ -23,25 +23,27 @@ from common import ROOT
 SECTION = "strata_chat"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
-PLAN_PROMPT = """あなたは会話アシスタントの下調べ係です。下の会話の最後の発言に答えるために、ウェブ検索が要るかを決めてください。
+SEARCH_TAG = re.compile(r"\[\[\s*検索\s*[:：]\s*(.+?)\]\]", re.S)
 
-- 事実・数値・最新の情報・薬・制度・製品・ニュースなどを聞かれたら search: true。
-  あいさつ・雑談・会話の中だけで答えられることなら search: false。
-- queries: 検索語を1〜2個（日本語。英語の方が見つかりやすい話題なら英語も可）。短く、検索エンジン向けの語の並びにする。
-- 患者・職員の氏名・ID・生年月日・住所・病院名・具体的な日付など、人を特定しうる語は検索語に絶対に入れない。
-  そうした情報が発言に含まれていたら、一般的な語に置き換える（例「山田さん 80歳 ワルファリン」→「高齢者 ワルファリン 用量」）。
+CHAT_RULES = """
+# 会話のしかた
+- Discord のチャット。ふだんは調べずに、そのまま会話する。長くても 400 字程度。見出しは使わない。
+- 次のようなときだけ、ウェブで調べてから答える:
+  最新の情報・ニュース、薬の用量・相互作用・添付文書の記載、制度や数値など、うろ覚えだと間違えそうな事実を聞かれたとき。
+  あいさつ・雑談・気持ちの話・会話の中だけで答えられることでは調べない。
+- 調べるときは、キャラクターの口調で「調べてみる」ことを短く一言伝えてから（答えはまだ書かない）、
+  最後の行に [[検索: 検索語1 | 検索語2]] とだけ書いて終える。検索語は1〜2個、検索エンジン向けの短い語の並び。
+- 検索語は外部の検索エンジンに送られる。患者・職員の氏名・ID・生年月日・住所・病院名・具体的な日付など、
+  人を特定しうる語は絶対に入れない（例「山田さん 80歳 ワルファリン」→「高齢者 ワルファリン 用量」）。
+"""
 
-会話:
-{history}
-
-JSONのみを出力: {{"search": true, "queries": ["..."]}}"""
-
-ANSWER_RULES = """
-# 検索結果の使い方
-- 下の「検索結果」は、いまウェブで調べた内容です。事実・数値・用量はここに書いてあることを優先し、どの資料かが分かるように書く（「PMDA の添付文書では〜」）。
-- 検索結果に無いことを、調べたかのように書かない。分からなければ分からないと言う。
-- 出典の一覧は最後にこちらで付けるので、本文に URL を並べなくてよい。
-- Discord のチャットなので、長くても 600 字程度。見出しは使わず、必要なら短い箇条書き。
+RESEARCH_RULES = """
+# いま調べた結果
+- 下の「検索結果」は、直前の発言について、いまウェブで調べた内容。これをもとに、キャラクターの口調のまま答える。
+- 事実・数値・用量は検索結果に書いてあることを優先し、どの資料かが分かるように言う（「PMDA の添付文書だと〜」）。
+- 検索結果に無いことを、調べたかのように言わない。分からなければ分からないと言う。
+- もう「調べてみる」とは言わない。[[検索: …]] も書かない。出典の一覧はこちらで付けるので URL は並べない。
+- 長くても 600 字程度。必要なら短い箇条書き。
 """
 
 
@@ -96,19 +98,8 @@ def chat(messages: list[dict], opts: dict) -> str:
         raise LLMError(f"Strata に接続できません: {ex}") from ex
     if r.status_code >= 400:
         raise LLMError(f"Strata error: {r.status_code} {r.text[:300]}")
-    return ja_fix(strip_think(r.json()["choices"][0]["message"].get("content") or "")).strip()
-
-
-def plan(history_text: str, cfg: dict) -> dict:
-    opts = llm(cfg, json_mode=True, temperature=0.1, max_tokens=300, timeout=180,
-               extra_body={"chat_template_kwargs": {"enable_thinking": False}})
-    try:
-        got = json.loads(re.search(r"\{.*\}", chat([{"role": "user", "content": PLAN_PROMPT.format(history=history_text)}],
-                                                   opts), re.S).group(0))
-    except (AttributeError, json.JSONDecodeError):
-        return {"search": False, "queries": []}
-    qs = [str(q).strip() for q in got.get("queries") or [] if str(q).strip()][:2]
-    return {"search": bool(got.get("search")) and bool(qs), "queries": qs}
+    text = ja_fix(strip_think(r.json()["choices"][0]["message"].get("content") or ""))
+    return text.replace("，", "、").replace("．", "。").strip()   # 中国語の句読点が混ざることがある
 
 
 def search(query: str, cfg: dict) -> list[dict]:
@@ -163,37 +154,50 @@ def results_block(hits: list[dict]) -> str:
     return "\n\n".join(out)
 
 
-def system_prompt(persona: dict) -> str:
-    return (persona.get("system") or "").strip() + "\n" + ANSWER_RULES
-
-
-def answer(history: list[dict], cfg: dict) -> dict:
-    """history: [{"role": "user"|"assistant", "name": str, "content": str}, ...]（古い順。最後が今の発言）。
-    返り値: {"text": 返答, "queries": [...], "sources": [(title, url), ...]}"""
-    persona = load_persona(cfg)
-    hist_text = "\n".join(f"{m['name']}: {m['content']}" for m in history[-6:])
-    p = plan(hist_text, cfg) if cfg.get("search", True) else {"search": False, "queries": []}
-    hits = gather(p["queries"], cfg) if p["search"] else []
-    sys = system_prompt(persona)
-    if hits:
-        sys += "\n# 検索結果（検索語: " + " / ".join(p["queries"]) + "）\n" + results_block(hits)
-    msgs = [{"role": "system", "content": sys}]
-    msgs += [{"role": m["role"], "content": m["content"]} for m in history]
-    opts = llm(cfg, json_mode=False, temperature=float(cfg.get("temperature", 0.5)),
+def _talk(system: str, history: list[dict], cfg: dict) -> str:
+    msgs = [{"role": "system", "content": system}] + [{"role": m["role"], "content": m["content"]} for m in history]
+    opts = llm(cfg, json_mode=False, temperature=float(cfg.get("temperature", 0.7)),
                max_tokens=int(cfg.get("max_tokens", 3000)), timeout=600,
                extra_body={"reasoning_budget_tokens": int(cfg.get("reasoning_budget_tokens", 512))})
-    text = chat(msgs, opts) or "（うまく答えを作れませんでした。もう一度送ってください）"
+    return chat(msgs, opts)
+
+
+def reply(history: list[dict], cfg: dict) -> dict:
+    """まず会話として返す。調べた方がよいとキャラクターが判断したら、「調べてみる」の一言と検索語を返す。
+    history: [{"role": "user"|"assistant", "content": str}, ...]（古い順。最後が今の発言）。
+    返り値: {"text": 返答（調べるときは「調べてみる」の一言）, "queries": [...]（調べないときは []）}"""
+    persona = load_persona(cfg)
+    rules = CHAT_RULES if cfg.get("search", True) else ""
+    text = _talk((persona.get("system") or "").strip() + "\n" + rules, history, cfg)
+    m = SEARCH_TAG.search(text)
+    if not m:
+        return {"text": text or "（うまく返事を作れませんでした。もう一度送ってください）", "queries": []}
+    queries = [q.strip() for q in re.split(r"[|｜]", m.group(1)) if q.strip()][:2]
+    ack = SEARCH_TAG.sub("", text).strip() or (persona.get("search_ack") or "ちょっと調べてみるね🔎")
+    return {"text": ack, "queries": queries}
+
+
+def research(history: list[dict], queries: list[str], cfg: dict) -> dict:
+    """検索して、その結果をもとにキャラクターとして答える。返り値: {"text", "sources": [(title, url), ...]}"""
+    persona = load_persona(cfg)
+    hits = gather(queries, cfg)
+    system = (persona.get("system") or "").strip() + "\n" + RESEARCH_RULES
+    system += ("\n# 検索結果（検索語: " + " / ".join(queries) + "）\n" + results_block(hits)) if hits \
+        else "\n# 検索結果\n（何も見つからなかった。見つからなかったと正直に伝える）"
+    text = SEARCH_TAG.sub("", _talk(system, history, cfg)).strip() or "（うまく答えを作れませんでした。もう一度送ってください）"
     used = [h for h in hits if h.get("text")] + [h for h in hits if not h.get("text")]
-    return {"text": text, "queries": p["queries"] if p["search"] else [],
-            "sources": [(h["title"] or urlparse(h["url"]).netloc, h["url"]) for h in used[:5]]}
+    return {"text": text, "sources": [(h["title"] or urlparse(h["url"]).netloc, h["url"]) for h in used[:5]]}
 
 
-if __name__ == "__main__":   # 試し: python src/strata_chat.py "質問"
+if __name__ == "__main__":   # 試し: python src/strata_chat.py "発言"
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
-    q = " ".join(sys.argv[1:]) or "ワルファリンとビタミンKの関係を教えて"
-    res = answer([{"role": "user", "name": "利用者", "content": q}], section_config())
-    print("検索語:", res["queries"])
-    print(res["text"])
-    for t, u in res["sources"]:
-        print("-", t, u)
+    cfg = section_config()
+    hist = [{"role": "user", "content": " ".join(sys.argv[1:]) or "ワルファリンとビタミンKの関係を教えて"}]
+    r1 = reply(hist, cfg)
+    print("▶", r1["text"], "\n検索語:", r1["queries"])
+    if r1["queries"]:
+        r2 = research(hist + [{"role": "assistant", "content": r1["text"]}], r1["queries"], cfg)
+        print("▶", r2["text"])
+        for t, u in r2["sources"]:
+            print("-", t, u)

@@ -114,17 +114,21 @@ class QABot(discord.Client):
                     history.append({"role": "assistant", "name": "アシスタント", "content": m.content.split(SOURCES_MARK)[0]})
             history = [h for h in reversed(history) if h["content"].strip()]
             history.append({"role": "user", "name": "利用者", "content": msg.content})
-            async with msg.channel.typing():
-                try:
-                    res = await asyncio.to_thread(strata_chat.answer, history, ccfg)
-                except Exception as ex:   # noqa: BLE001
-                    log.error("chat: %s", traceback.format_exc())
-                    await msg.reply(f"⚠️ 答えられませんでした: {str(ex)[:300]}", mention_author=False)
+            try:
+                async with msg.channel.typing():
+                    first = await asyncio.to_thread(strata_chat.reply, history, ccfg)
+                await self.chat_send(msg, first["text"])
+                if not first["queries"]:
                     return
-            text = res["text"]
-            if res["queries"]:
-                text += SOURCES_MARK + " 検索: " + " / ".join(res["queries"])
-                text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
+                history.append({"role": "assistant", "name": "アシスタント", "content": first["text"]})
+                async with msg.channel.typing():
+                    res = await asyncio.to_thread(strata_chat.research, history, first["queries"], ccfg)
+            except Exception as ex:   # noqa: BLE001
+                log.error("chat: %s", traceback.format_exc())
+                await msg.reply(f"⚠️ 答えられませんでした: {str(ex)[:300]}", mention_author=False)
+                return
+            text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(first["queries"])
+            text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
             await self.chat_send(msg, text)
 
     async def chat_send(self, msg: discord.Message, text: str) -> None:
