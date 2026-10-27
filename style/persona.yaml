@@ -2,11 +2,12 @@
 # system の文章が、そのまま Strata への指示（システムプロンプト）になります。自由に書き換えてOK。
 # 書き換えたら Bot の再起動は不要（毎回読み直します）。
 # name / avatar_url は Discord に表示する名前とアイコン（.env に DISCORD_CHAT_WEBHOOK_URL があるときだけ使う）。
+# avatar_url を空にすると、Webhook 自体に設定したアイコンを使う（ルナの絵は公開リポジトリに置かず、Webhook に直接設定済み）。
 # search_ack は、キャラクターが「調べてみる」の一言を書き忘れたときの代わりの一言。
 # 2026-10-27 仮の設定: Grok の Ani のような、甘えん坊でからかい好きなアニメ風の相棒（あとで変える予定）。
 
 name: ルナ
-avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/gimon.png?v=1
+avatar_url: ""
 search_ack: ちょっと待ってて、調べてみるね🔎
 
 system: |
