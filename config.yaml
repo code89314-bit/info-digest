@@ -523,3 +523,14 @@ strata_chat:
   max_tokens: 3000
   # 答える前に考える量の上限（大きいほど丁寧だが遅い。0で無制限）
   reasoning_budget_tokens: 512
+  # スキル「小説」（ペルソナの skills に novel があるとき）
+  novel:
+    chars: 2500            # だいたいの長さ（字）。会話で指定があればそちら
+    max_tokens: 8000       # 考える分も含めた上限。長編にするなら増やす（そのぶん時間がかかる）
+    temperature: 0.75
+    reasoning_budget_tokens: 1024
+    prev_chars: 6000       # 「続き」を書くときに読み返す前回の話の長さ
+  # 嗜好の記憶（ペルソナの memory: true のとき）。中身は .local/state/strata_memory_<id>.json
+  memory:
+    max_items: 80          # これを超えたら古いものから忘れる
+    announce: true         # 新しく覚えたことを小さい字でチャンネルに出す

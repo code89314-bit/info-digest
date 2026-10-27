@@ -16,6 +16,7 @@ import asyncio
 import datetime as dt
 import logging
 import os
+import re
 import sys
 import traceback
 
@@ -27,6 +28,9 @@ from common import load_state, save_state
 
 STATE = "qa_bot"
 PERSONA_CMDS = {"!ペルソナ", "!persona", "！ペルソナ", "！persona"}   # トークチャンネルでのペルソナ切り替え
+MEMORY_CMDS = {"!記憶", "！記憶", "!memory"}                             # 覚えている嗜好の一覧
+FORGET_CMDS = {"!忘れて", "！忘れて", "!forget"}                        # 嗜好を番号で消す
+NOVEL_MARK = "📖 "                                                      # 小説の投稿の頭（履歴では短くする）
 SOURCES_MARK = "\n-# 🔎"   # 会話の返信の末尾（検索語・出典）。履歴として Strata に渡すときは切り落とす
 log = logging.getLogger("qa_bot")
 
@@ -36,9 +40,17 @@ def now_id() -> str:
 
 
 def chunks(text: str, n: int = 1900) -> list[str]:
-    out, cur = [], ""
+    """Discord の文字数制限（2000字）に収まるよう、行の切れ目で分ける。1行が長すぎるときは、句点か n 字で切る。"""
+    lines = []
     for line in text.splitlines():
-        if len(cur) + len(line) + 1 > n:
+        while len(line) > n:
+            cut = line.rfind("。", 0, n) + 1 or n
+            lines.append(line[:cut])
+            line = line[cut:]
+        lines.append(line)
+    out, cur = [], ""
+    for line in lines:
+        if cur and len(cur) + len(line) + 1 > n:
             out.append(cur)
             cur = ""
         cur += line + "\n"
@@ -106,41 +118,87 @@ class QABot(discord.Client):
         if not msg.content.strip():
             return
         ccfg = strata_chat.section_config()
-        if msg.content.strip().split()[0].lower() in PERSONA_CMDS:
+        cmd = msg.content.strip().split()[0].lower()
+        if cmd in PERSONA_CMDS:
             await self.switch_persona(msg, ccfg)
             return
+        if cmd in MEMORY_CMDS | FORGET_CMDS:
+            await self.memory_cmd(msg, ccfg, cmd in FORGET_CMDS)
+            return
         async with self.chat_lock:
-            history = []
-            async for m in msg.channel.history(limit=int(ccfg.get("history", 12)), before=msg, oldest_first=False):
-                words = m.content.split()
-                if words and words[0].lower() in PERSONA_CMDS:
-                    if len(words) > 1:
-                        break   # ペルソナを切り替えたところより前は、別の人との会話なので読まない
-                    continue
-                if m.content.startswith("ペルソナ一覧"):
-                    continue
-                if m.author.id in self.owners and not m.author.bot:
-                    history.append({"role": "user", "name": "利用者", "content": m.content})
-                elif (m.author.bot or m.webhook_id) and m.content and not m.content.startswith(("⚠️", "-#")):
-                    history.append({"role": "assistant", "name": "アシスタント", "content": m.content.split(SOURCES_MARK)[0]})
-            history = [h for h in reversed(history) if h["content"].strip()]
-            history.append({"role": "user", "name": "利用者", "content": msg.content})
+            history = await self.chat_history(msg, ccfg)
             try:
                 async with msg.channel.typing():
                     first = await asyncio.to_thread(strata_chat.reply, history, ccfg)
                 await self.chat_send(msg, first["text"])
-                if not first["queries"]:
-                    return
                 history.append({"role": "assistant", "name": "アシスタント", "content": first["text"]})
-                async with msg.channel.typing():
-                    res = await asyncio.to_thread(strata_chat.research, history, first["queries"], ccfg)
+                if first["skill"] == "web_search":
+                    queries = strata_chat.search_queries(first["arg"])
+                    async with msg.channel.typing():
+                        res = await asyncio.to_thread(strata_chat.research, history, queries, ccfg)
+                    text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(queries)
+                    text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
+                    await self.chat_send(msg, text)
+                    history.append({"role": "assistant", "name": "アシスタント", "content": res["text"]})
+                elif first["skill"] == "novel":
+                    async with msg.channel.typing():
+                        nov = await asyncio.to_thread(strata_chat.write_novel, history, first["arg"], ccfg)
+                    await self.chat_send(msg, f"{NOVEL_MARK}『{nov['title']}』\n\n" + nov["text"].split("\n", 1)[-1].strip(),
+                                         file=nov["path"])
+                    history.append({"role": "assistant", "name": "アシスタント", "content": f"（小説『{nov['title']}』を書いた）"})
             except Exception as ex:   # noqa: BLE001
                 log.error("chat: %s", traceback.format_exc())
                 await msg.reply(f"⚠️ 答えられませんでした: {str(ex)[:300]}", mention_author=False)
                 return
-            text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(first["queries"])
-            text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
-            await self.chat_send(msg, text)
+            try:   # 嗜好の記憶（memory: true のペルソナだけ）。返事のあとに、同じ順番待ちの中で行う
+                persona = strata_chat.load_persona(ccfg)
+                added = await asyncio.to_thread(strata_chat.update_memory, persona, history, ccfg)
+                if added and ccfg.get("memory", {}).get("announce", True):
+                    await msg.channel.send("-# 🧠 覚えたこと: " + " / ".join(a[:40] for a in added)[:1800])
+            except Exception:   # noqa: BLE001
+                log.error("memory: %s", traceback.format_exc())
+
+    async def chat_history(self, msg: discord.Message, ccfg: dict) -> list[dict]:
+        """トークチャンネルの直近の発言（古い順）。最後にペルソナを切り替えたところより前と、コマンドとその返事は読まない。"""
+        history = []
+        async for m in msg.channel.history(limit=int(ccfg.get("history", 12)), before=msg, oldest_first=False):
+            words = m.content.split()
+            if words and words[0].lower() in PERSONA_CMDS:
+                if len(words) > 1:
+                    break   # ペルソナを切り替えたところより前は、別の人との会話なので読まない
+                continue
+            if (words and words[0].lower() in MEMORY_CMDS | FORGET_CMDS) or m.content.startswith(("ペルソナ一覧", "🧠")):
+                continue
+            if m.author.id in self.owners and not m.author.bot:
+                history.append({"role": "user", "name": "利用者", "content": m.content})
+            elif (m.author.bot or m.webhook_id) and m.content and not m.content.startswith(("⚠️", "-#")):
+                text = m.content.split(SOURCES_MARK)[0]
+                if text.startswith(NOVEL_MARK):   # 小説の本文は長いので、履歴では題名と冒頭だけ（2通目以降は読まない）
+                    if not text.startswith(NOVEL_MARK + "『"):
+                        continue
+                    text = "（書いた小説）" + text[len(NOVEL_MARK):][:300]
+                history.append({"role": "assistant", "name": "アシスタント", "content": text[:1500]})
+        history = [h for h in reversed(history) if h["content"].strip()]
+        history.append({"role": "user", "name": "利用者", "content": msg.content})
+        return history
+
+    async def memory_cmd(self, msg: discord.Message, ccfg: dict, forget: bool) -> None:
+        """「!記憶」で覚えている嗜好の一覧、「!忘れて 3 5」で番号の項目を消す。"""
+        persona = strata_chat.load_persona(ccfg)
+        if not persona.get("memory"):
+            await msg.reply(f"🧠 {persona['name']}は嗜好を記憶しない設定です（ペルソナの memory: true で有効）。", mention_author=False)
+            return
+        if forget:
+            nums = [int(x) for x in re.findall(r"\d+", msg.content)]
+            gone = strata_chat.forget(persona["id"], nums)
+            await msg.reply("🧠 忘れました: " + (" / ".join(gone) if gone else "（該当なし。番号は「!記憶」で確認）"),
+                            mention_author=False)
+            return
+        items = strata_chat.load_memory(persona["id"])
+        lines = [f"{i}. [{strata_chat.KIND_LABEL.get(m['kind'], m['kind'])}] {m['text']}" for i, m in enumerate(items, 1)]
+        text = f"🧠 {persona['name']}が覚えていること（{len(items)}件。「!忘れて 番号」で消せます）\n" + ("\n".join(lines) or "（まだありません）")
+        for part in chunks(text):
+            await msg.channel.send(part)
 
     async def switch_persona(self, msg: discord.Message, ccfg: dict) -> None:
         """「!ペルソナ」で一覧、「!ペルソナ 名前」で切り替え（切り替えたら、そのペルソナがあいさつする）。"""
@@ -159,18 +217,23 @@ class QABot(discord.Client):
         strata_chat.set_persona(p["id"])
         await self.chat_send(msg, p.get("greeting") or f"{p['name']}に切り替えました。")
 
-    async def chat_send(self, msg: discord.Message, text: str) -> None:
-        """ペルソナの名前・アイコンで（.env の DISCORD_CHAT_WEBHOOK_URL があれば Webhook、無ければ Bot の返信）。"""
+    async def chat_send(self, msg: discord.Message, text: str, file=None) -> None:
+        """ペルソナの名前・アイコンで（.env の DISCORD_CHAT_WEBHOOK_URL があれば Webhook、無ければ Bot の返信）。
+        小説（NOVEL_MARK で始まる）は、分割した2通目以降にも印を付ける（履歴で読み飛ばすため）。file は最後の1通に添付。"""
         url = os.environ.get("DISCORD_CHAT_WEBHOOK_URL")
         persona = strata_chat.load_persona(strata_chat.section_config())
-        for i, part in enumerate(chunks(text)):
+        parts = chunks(text)
+        if text.startswith(NOVEL_MARK):
+            parts = [parts[0]] + [NOVEL_MARK + p for p in parts[1:]]
+        for i, part in enumerate(parts):
+            kw = {"file": discord.File(file)} if file and i == len(parts) - 1 else {}
             if url:
                 await discord.Webhook.from_url(url, client=self).send(
-                    part, username=persona.get("name") or "Strata", avatar_url=persona.get("avatar_url") or None)
+                    part, username=persona.get("name") or "Strata", avatar_url=persona.get("avatar_url") or None, **kw)
             elif i == 0:
-                await msg.reply(part, mention_author=False)
+                await msg.reply(part, mention_author=False, **kw)
             else:
-                await msg.channel.send(part)
+                await msg.channel.send(part, **kw)
 
     # ---- 1件ずつ処理 ----
     async def worker(self) -> None:

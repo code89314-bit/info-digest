@@ -6,7 +6,9 @@
 name: しらべ
 aliases: [shirabe, 調べ]
 avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/gimon.png?v=1
-search_ack: 少し調べてみます🔎
+# skills: 必要だと判断したら自分で使うスキル（web_search = ウェブで調べて答える）
+skills: [web_search]
+skill_ack: {web_search: 少し調べてみます🔎}
 greeting: しらべです。調べものがあれば、なんでもどうぞ。
 
 system: |
