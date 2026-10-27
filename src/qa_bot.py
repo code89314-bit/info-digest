@@ -26,6 +26,7 @@ import strata_chat
 from common import load_state, save_state
 
 STATE = "qa_bot"
+PERSONA_CMDS = {"!ペルソナ", "!persona", "！ペルソナ", "！persona"}   # トークチャンネルでのペルソナ切り替え
 SOURCES_MARK = "\n-# 🔎"   # 会話の返信の末尾（検索語・出典）。履歴として Strata に渡すときは切り落とす
 log = logging.getLogger("qa_bot")
 
@@ -105,9 +106,19 @@ class QABot(discord.Client):
         if not msg.content.strip():
             return
         ccfg = strata_chat.section_config()
+        if msg.content.strip().split()[0].lower() in PERSONA_CMDS:
+            await self.switch_persona(msg, ccfg)
+            return
         async with self.chat_lock:
             history = []
             async for m in msg.channel.history(limit=int(ccfg.get("history", 12)), before=msg, oldest_first=False):
+                words = m.content.split()
+                if words and words[0].lower() in PERSONA_CMDS:
+                    if len(words) > 1:
+                        break   # ペルソナを切り替えたところより前は、別の人との会話なので読まない
+                    continue
+                if m.content.startswith("ペルソナ一覧"):
+                    continue
                 if m.author.id in self.owners and not m.author.bot:
                     history.append({"role": "user", "name": "利用者", "content": m.content})
                 elif (m.author.bot or m.webhook_id) and m.content and not m.content.startswith(("⚠️", "-#")):
@@ -130,6 +141,23 @@ class QABot(discord.Client):
             text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(first["queries"])
             text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
             await self.chat_send(msg, text)
+
+    async def switch_persona(self, msg: discord.Message, ccfg: dict) -> None:
+        """「!ペルソナ」で一覧、「!ペルソナ 名前」で切り替え（切り替えたら、そのペルソナがあいさつする）。"""
+        words = msg.content.split(maxsplit=1)
+        now = strata_chat.load_persona(ccfg)
+        if len(words) == 1:
+            lines = [f"{'▶' if p['id'] == now['id'] else '・'} {p['name']}（{p['id']}）"
+                     for p in strata_chat.personas(ccfg).values()]
+            await msg.reply("ペルソナ一覧（「!ペルソナ 名前」で切り替え）\n" + "\n".join(lines), mention_author=False)
+            return
+        p = strata_chat.find_persona(ccfg, words[1])
+        if not p:
+            await msg.reply(f"⚠️ 「{words[1][:50]}」というペルソナはありません。「!ペルソナ」で一覧を出せます。",
+                            mention_author=False)
+            return
+        strata_chat.set_persona(p["id"])
+        await self.chat_send(msg, p.get("greeting") or f"{p['name']}に切り替えました。")
 
     async def chat_send(self, msg: discord.Message, text: str) -> None:
         """ペルソナの名前・アイコンで（.env の DISCORD_CHAT_WEBHOOK_URL があれば Webhook、無ければ Bot の返信）。"""

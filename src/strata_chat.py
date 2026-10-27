@@ -18,7 +18,7 @@ import yaml
 
 import ai_digest
 from ai_digest import LLMError, llm_settings, ja_fix, strip_think
-from common import ROOT
+from common import ROOT, load_state, save_state
 
 SECTION = "strata_chat"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -72,9 +72,37 @@ def section_config() -> dict:
     return ai_digest.section_config(SECTION)
 
 
+def personas(cfg: dict) -> dict[str, dict]:
+    """style/personas/*.yaml（ファイル名がID）。{id: ペルソナ}。"""
+    out = {}
+    for path in sorted((ROOT / (cfg.get("persona_dir") or "style/personas")).glob("*.yaml")):
+        p = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        out[path.stem] = {**p, "id": path.stem, "name": p.get("name") or path.stem}
+    return out
+
+
+def find_persona(cfg: dict, word: str) -> dict | None:
+    """ID・名前・別名（aliases）のどれかに合うペルソナ。大文字小文字は区別しない。"""
+    w = word.strip().lower()
+    for p in personas(cfg).values():
+        if w in {p["id"].lower(), str(p["name"]).lower(), *(str(a).lower() for a in p.get("aliases") or [])}:
+            return p
+    return None
+
+
 def load_persona(cfg: dict) -> dict:
-    path = ROOT / (cfg.get("persona_file") or "style/persona.yaml")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    """いま使っているペルソナ（state/strata_chat.json の persona。無ければ config の default_persona）。"""
+    ps = personas(cfg)
+    if not ps:
+        raise LLMError(f"ペルソナがありません（{cfg.get('persona_dir') or 'style/personas'}/*.yaml）")
+    pid = load_state(SECTION).get("persona") or cfg.get("default_persona")
+    return ps.get(pid) or next(iter(ps.values()))
+
+
+def set_persona(pid: str) -> None:
+    state = load_state(SECTION)
+    state["persona"] = pid
+    save_state(SECTION, state)
 
 
 def llm(cfg: dict, **over) -> dict:

@@ -506,7 +506,9 @@ qa_bot:
 # そのチャンネルの Webhook URL を .env の DISCORD_CHAT_WEBHOOK_URL に書く（無ければ Bot の名前で返信）。
 strata_chat:
   enabled: true
-  persona_file: style/persona.yaml
+  # ペルソナは style/personas/*.yaml（1人1ファイル）。トークチャンネルで「!ペルソナ 名前」で切り替え（最後に選んだものを覚える）
+  persona_dir: style/personas
+  default_persona: luna
   # 自宅の SearXNG（D:\searxng。タスク「SearXNG」がログオン時に起動）
   searxng_url: http://127.0.0.1:8888
   search: true
