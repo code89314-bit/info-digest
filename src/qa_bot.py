@@ -7,6 +7,8 @@
 - 音声は、NotebookLM の1日の枠に空きがあるときだけ作る。空きが無ければノートを残して待ち、
   20分おきに確認して、空いたら作ってスレッドに貼り、note の下書きにも埋め込む。
 
+- 会話チャンネル（.env の DISCORD_CHAT_CHANNEL_ID）では、ペルソナとして Strata が検索つきで答える（src/strata_chat.py）。
+
 起動: .venv\\Scripts\\pythonw.exe src\\qa_bot.py （タスク「info-digest qa bot」がログオン時に起動）
 必要: .env に DISCORD_BOT_TOKEN と DISCORD_QA_CHANNEL_ID。開発者ポータルで Message Content Intent を ON。
 """
@@ -20,9 +22,11 @@ import traceback
 import discord
 
 import qa_deep
+import strata_chat
 from common import load_state, save_state
 
 STATE = "qa_bot"
+SOURCES_MARK = "\n-# 🔎"   # 会話の返信の末尾（検索語・出典）。履歴として Strata に渡すときは切り落とす
 log = logging.getLogger("qa_bot")
 
 
@@ -56,7 +60,7 @@ def summary_embeds(res: dict) -> list[discord.Embed]:
 
 
 class QABot(discord.Client):
-    def __init__(self, cfg: dict, channel_id: int):
+    def __init__(self, cfg: dict, channel_id: int, chat_channel_id: int | None = None):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
@@ -64,6 +68,8 @@ class QABot(discord.Client):
         self.owners: set[int] = {int(x) for x in cfg.get("owner_ids") or []}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.notebooks: dict[str, object] = {}   # 音声待ちのノート（qid → Notebook）
+        self.chat_channel_id = chat_channel_id
+        self.chat_lock = asyncio.Lock()          # 会話は1件ずつ（Strata は同時に1件しか処理しない）
 
     async def setup_hook(self) -> None:
         self.loop.create_task(self.worker())
@@ -78,7 +84,12 @@ class QABot(discord.Client):
         log.info("ready: %s / channel %s / owners %s", self.user, self.channel_id, self.owners)
 
     async def on_message(self, msg: discord.Message) -> None:
-        if msg.author.bot or msg.channel.id != self.channel_id or msg.author.id not in self.owners:
+        if msg.author.bot or msg.author.id not in self.owners:
+            return
+        if self.chat_channel_id and msg.channel.id == self.chat_channel_id:
+            self.loop.create_task(self.chat(msg))
+            return
+        if msg.channel.id != self.channel_id:
             return
         text = msg.content.strip()
         if len(text) < 5:
@@ -88,6 +99,46 @@ class QABot(discord.Client):
         await thread.send("受け付けました。患者情報の確認 → 解釈 → 資料集め → まとめ → note 下書きの順に進めます"
                           + (f"（前に {pos} 件あります）" if pos else "") + "。20〜30分ほどかかります。")
         await self.queue.put((text, thread))
+
+    # ---- 会話（ペルソナ・検索つき） ----
+    async def chat(self, msg: discord.Message) -> None:
+        if not msg.content.strip():
+            return
+        ccfg = strata_chat.section_config()
+        async with self.chat_lock:
+            history = []
+            async for m in msg.channel.history(limit=int(ccfg.get("history", 12)), before=msg, oldest_first=False):
+                if m.author.id in self.owners and not m.author.bot:
+                    history.append({"role": "user", "name": "利用者", "content": m.content})
+                elif (m.author.bot or m.webhook_id) and m.content and not m.content.startswith(("⚠️", "-#")):
+                    history.append({"role": "assistant", "name": "アシスタント", "content": m.content.split(SOURCES_MARK)[0]})
+            history = [h for h in reversed(history) if h["content"].strip()]
+            history.append({"role": "user", "name": "利用者", "content": msg.content})
+            async with msg.channel.typing():
+                try:
+                    res = await asyncio.to_thread(strata_chat.answer, history, ccfg)
+                except Exception as ex:   # noqa: BLE001
+                    log.error("chat: %s", traceback.format_exc())
+                    await msg.reply(f"⚠️ 答えられませんでした: {str(ex)[:300]}", mention_author=False)
+                    return
+            text = res["text"]
+            if res["queries"]:
+                text += SOURCES_MARK + " 検索: " + " / ".join(res["queries"])
+                text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
+            await self.chat_send(msg, text)
+
+    async def chat_send(self, msg: discord.Message, text: str) -> None:
+        """ペルソナの名前・アイコンで（.env の DISCORD_CHAT_WEBHOOK_URL があれば Webhook、無ければ Bot の返信）。"""
+        url = os.environ.get("DISCORD_CHAT_WEBHOOK_URL")
+        persona = strata_chat.load_persona(strata_chat.section_config())
+        for i, part in enumerate(chunks(text)):
+            if url:
+                await discord.Webhook.from_url(url, client=self).send(
+                    part, username=persona.get("name") or "Strata", avatar_url=persona.get("avatar_url") or None)
+            elif i == 0:
+                await msg.reply(part, mention_author=False)
+            else:
+                await msg.channel.send(part)
 
     # ---- 1件ずつ処理 ----
     async def worker(self) -> None:
@@ -190,7 +241,10 @@ def main() -> None:
         return
     if not token or not channel:
         raise SystemExit(".env に DISCORD_BOT_TOKEN と DISCORD_QA_CHANNEL_ID を書いてください")
-    QABot(cfg, int(channel)).run(token, log_handler=None)
+    chat_channel = os.environ.get("DISCORD_CHAT_CHANNEL_ID")
+    if not strata_chat.section_config().get("enabled", True):
+        chat_channel = None
+    QABot(cfg, int(channel), int(chat_channel) if chat_channel else None).run(token, log_handler=None)
 
 
 if __name__ == "__main__":

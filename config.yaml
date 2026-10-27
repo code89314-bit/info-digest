@@ -500,3 +500,24 @@ qa_bot:
   note_post:
     enabled: true
     headless: false
+
+# ==== Discord で Strata と会話（検索つき）: src/strata_chat.py。Bot は qa_bot と同じ（別チャンネルで受ける） ====
+# チャンネルは .env の DISCORD_CHAT_CHANNEL_ID。ペルソナの名前・アイコンで投稿したいときは、
+# そのチャンネルの Webhook URL を .env の DISCORD_CHAT_WEBHOOK_URL に書く（無ければ Bot の名前で返信）。
+strata_chat:
+  enabled: true
+  persona_file: style/persona.yaml
+  # 自宅の SearXNG（D:\searxng。タスク「SearXNG」がログオン時に起動）
+  searxng_url: http://127.0.0.1:8888
+  search: true
+  language: ja
+  # 検索結果のうち Strata に渡す件数と、本文まで読む件数・1ページの文字数（多いほど遅く、メモリも使う）
+  max_results: 6
+  fetch_pages: 3
+  page_chars: 2500
+  # 会話の履歴として読む、チャンネルの直近の発言数
+  history: 12
+  temperature: 0.5
+  max_tokens: 3000
+  # 答える前に考える量の上限（大きいほど丁寧だが遅い。0で無制限）
+  reasoning_budget_tokens: 512
