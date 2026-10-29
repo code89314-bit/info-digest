@@ -567,6 +567,15 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                 overview = overview or write_overview(picked, cfg)
                 if overview:
                     embeds.insert(0, {"title": "📋 今日の動向まとめ", "description": overview, "color": 0x5C6BC0})
+            if (cfg.get("market") or {}).get("enabled"):   # news.market: 米国株の欄（src/market.py）
+                import market
+                try:
+                    mk = market.build_embed(cfg)
+                except Exception as ex:   # noqa: BLE001  株の欄が作れなくてもニュースは投稿する
+                    print("米国株の欄を作れませんでした:", ex)
+                    mk = None
+                if mk:
+                    embeds.insert(1 if overview else 0, mk)
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
