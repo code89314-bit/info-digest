@@ -215,6 +215,10 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
   - がん薬物療法の際どい質問8問: Qwen3.6・Gemma とも拒否0。正確さは Qwen3.6 が上（Gemma は 5-FU の用量を逆、デクスラゾキサンを皮下注などの誤り）
   - Strata の拒否抑制（experimental speed projection＝拒否方向の射影ベクトル）は Flash-Next 専用で Qwen3.6 には使えない。必要になったら llama.cpp で heretic 版を動かす案がある
 - 戻すとき: スクリプトを `*.bak-q2_0` に戻し、`config.yaml` の model を戻して、タスク「Strata AutoStart」を再起動。
+- 切り替え漏れ（2026-10-30 朝に発覚）: CORS 許可 `cors_origins` はプリセットではなくモデルごとの設定ファイル
+  `%LOCALAPPDATA%\Strata\install\strata-<model>.json` にある。Q2_0 の分には書いてあったが Qwen3.6 の分に無く、
+  持参薬鑑別アプリ（GitHub Pages）だけが「サーバにつながりません」になった（preflight は 204 だが Allow-Origin ヘッダーが無い）。
+  `"cors_origins": ["https://code89314-bit.github.io"]` を足して `strata launch --stop --preset "Qwen36 32K"` → 再起動で解決（元は `.bak-cors`）。
 
 ## 疑問深堀り（Discord の疑問深堀チャンネル → note の下書き）2026-10-22
 
