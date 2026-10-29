@@ -156,10 +156,11 @@ def build_embed(cfg: dict) -> dict | None:
             f"• {ja_fix(str(r['text']))}{links(r.get('refs'), heads)}\n" for r in rels)
     if not rep:
         body += "\n-# 解説はLLMが使えなかったため省略しました"
-    # embed の上限（4096字）に収める。行の途中（リンクの途中）で切らない
+    # 3000字に収める（Googleニュースのリンクは1本250字ほどある。長いと他の欄と合わせて
+    # Discord の1通の上限を超え 413 になった 2026-10-30）。行の途中（リンクの途中）で切らない
     desc = ""
     for line in body.strip().split("\n"):
-        if len(desc) + len(line) + 1 > 4000:
+        if len(desc) + len(line) + 1 > 3000:
             break
         desc += line + "\n"
     return {"title": f"📈 米国株（{index['date']} 終値）", "description": desc.strip(), "color": 0x1E88E5}
