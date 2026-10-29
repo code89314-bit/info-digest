@@ -123,10 +123,10 @@ PROMPT = """あなたは情報キュレーターです。以下は過去1日ほ�
 
 各採用記事について、日本語で（英語の記事も日本語で書く）:
 - title_ja: 内容が分かる簡潔な見出し（40字以内）
-- summary_ja: 何が新しく、なぜ重要かを1〜2文（{summary_len}字以内）。誇張しない。候補に書かれていない事実を補わない
+- summary_ja: {summary_rule}（{summary_len}字以内）。誇張しない。候補に書かれていない事実を補わない
 - 日本語は自然に。英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・製品名・試験名は原語のままでよい）。
   中国語の字体（简体字・繁體字）を使わない
-- tag: {tags} のいずれか
+- tag: {tags} のいずれか{tag_guide}
 - score: 読者にとっての価値 1〜5（5が最も価値が高い）
 
 JSONのみを出力（前後に説明文やコードブロックを付けない）:
@@ -270,6 +270,8 @@ def build_prompt(batch: list[dict], cfg: dict, summary_chars: int) -> str:
     adopt = (cfg.get("adopt") or "上の関心に直接役立つ新モデル・新機能・リリース・実用的な手法や検証").strip()
     return PROMPT.format(focus=focus, exclude=exclude, interests="、".join((cfg.get("interests") or [])) or "特になし",
                          adopt=adopt, summary_len=cfg.get("summary_len", 120),
+                         summary_rule=(cfg.get("summary_rule") or "何が新しく、なぜ重要かを1〜2文").strip(),
+                         tag_guide=f"（{cfg['tag_guide'].strip()}）" if cfg.get("tag_guide") else "",
                          max_items=cfg.get("max_items", 12), tags="／".join(get_tags(cfg)),
                          candidates="\n".join(lines))
 
@@ -403,13 +405,20 @@ def build_embeds(picked: list[dict], tags: list[str] | None = None, style: dict 
 OVERVIEW_PROMPT = """あなたは専門ニュースの編集者です。読者: {audience}
 以下は本日選んだ新着情報です。これだけを根拠に「今日の動向まとめ」を日本語で書いてください。
 
-- {group_by}ごとに **太字の見出し** を立て、その下に箇条書きで「何が変わったか」「現場への影響・注意点」を簡潔に
+- {layout}
 - 情報に書かれていない数値・用量・承認状況・日付を補わない。不確かなことは断定しない
 - 英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・試験名は原語のままでよい）。中国語の字体を使わない
 {extra}- 全体で{max_chars}字以内。前置きや結びの挨拶は不要
 
 新着情報:
 {items}"""
+
+
+def overview_layout(ov: dict) -> str:
+    """動向まとめの組み立て方（overview.layout）。書かなければ group_by ごとの見出し＋箇条書き。"""
+    group_by = ov.get("group_by") or "テーマ"
+    return (ov.get("layout") or f"{group_by}ごとに **太字の見出し** を立て、その下に箇条書きで"
+            "「何が変わったか」「現場への影響・注意点」を簡潔に").strip()
 
 
 def write_overview(picked: list[dict], cfg: dict) -> str | None:
@@ -421,8 +430,7 @@ def write_overview(picked: list[dict], cfg: dict) -> str | None:
         return None
     lines = [f"- [{p['tag']}] {p['title_ja']}：{p['summary_ja']}（{p['source']}）" for p in picked]
     extra = "".join(f"- {r}\n" for r in (ov.get("rules") or []))
-    prompt = OVERVIEW_PROMPT.format(audience=ov.get("audience") or "この分野の専門家",
-                                    group_by=ov.get("group_by") or "テーマ", extra=extra,
+    prompt = OVERVIEW_PROMPT.format(audience=ov.get("audience") or "この分野の専門家", layout=overview_layout(ov), extra=extra,
                                     max_chars=ov.get("max_chars", 1200), items="\n".join(lines))
     try:
         text = ja_fix(strip_think(chat(prompt, llm)).strip())
@@ -486,7 +494,7 @@ def summarize_with_notebooklm(nb, picked: list[dict], cfg: dict) -> tuple[list[d
         items = "\n".join(f"- [{p['tag']}] {p['title_ja']}：{p['summary_ja']}（{p['source']}）" for p in out)
         try:
             overview = nb.ask(OVERVIEW_PROMPT.format(
-                audience=audience, group_by=ov.get("group_by") or "テーマ", extra=extra,
+                audience=audience, layout=overview_layout(ov), extra=extra,
                 max_chars=ov.get("max_chars", 1200), items=items)
                 + "\n\n資料（記事本文）の内容に基づいて書き、上の一覧と食い違う場合は資料を優先する。")[:3900] or None
         except Exception as ex:   # noqa: BLE001

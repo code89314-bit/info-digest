@@ -32,7 +32,9 @@ ai_digest:
     # 例: Ollama http://localhost:11434/v1 、LM Studio http://localhost:1234/v1
     base_url: http://127.0.0.1:8080/v1
     # サーバーで動いているモデル名（Strata は strata launch の表示、Ollama は ollama list で確認）
-    model: qwen3.8-flash-next-q2_0
+    # 2026-10-30 に Qwen3.8-Flash-Next Q2_0 から Qwen3.6-35B-A3B（プリセット「Qwen36 32K」）へ切り替え。
+    # モデル全体がメモリに収まるので約8倍速い（ニュース25件の選別 240秒 → 30秒）
+    model: qwen3.6-35b-a3b-ud-q4_k_xl
     # APIキーを入れる環境変数の名前（キーの値そのものは .env に書く。不要なら空でよい）
     api_key_env: LOCAL_LLM_API_KEY
     # 1回の問い合わせを待つ最大秒数
@@ -161,6 +163,88 @@ ai_global:
       url: https://github.com/Comfy-Org/ComfyUI/releases.atom
     - name: Ollama リリース
       url: https://github.com/ollama/ollama/releases.atom
+
+# ==== 朝のニュース（広告なしの自分専用ニュース）====
+# NHK などの RSS から、関心に合うものだけを Strata が選んで要約し、#ニュース に投稿します。
+# 要約は Discord の中で読めるので、リンク先（広告の多いページ）を開かなくて済みます。
+# 実行: python src/ai_digest.py news （タスク「info-digest news」毎朝 6:50）
+# llm: を書かなければ ai_digest の llm と同じサーバー・モデルを使います。
+news:
+  icon: 📰
+  # Discordに表示する名前
+  title: 朝のニュース
+  # 投稿先の Webhook URL を入れる環境変数の名前（値は .env に書く）
+  webhook_env: DISCORD_WEBHOOK_NEWS
+  # 1回の最大件数
+  max_items: 15
+  # LLMに見せる候補の最大数（多いほど時間がかかる。25件で約1分）。上の sources の順に数えます
+  max_candidates: 200
+  # 何時間前までの記事を対象にするか（前日朝〜今朝）
+  lookback_hours: 24
+  # 要約の長さ（字）。リンク先を開かなくても分かるよう少し長め
+  summary_len: 150
+  # 要約の書き方（書かなければ「何が新しく、なぜ重要かを1〜2文」）。
+  # ニュースは事実だけにする：「〜が求められる」「〜に影響する」のような解釈・評価を付けさせない
+  summary_rule: |
+    いつ・誰が・何をしたか（数字・日付・固有名詞を含む）を事実だけで1〜2文。です・ます調。
+    記事に書かれていない影響・評価・教訓・助言（「〜が求められる」「〜に影響する」「〜として重要」「注目される」など）は書かない
+
+  # ---- 何を拾うか（LLMへの指示。ここを書き換えると「自分専用」に近づきます） ----
+  focus: |
+    朝の数分で「今日知っておくべきこと」をつかむためのニュース。
+    - 暮らし・仕事に影響する制度や政策（物価・税・社会保障・医療制度・診療報酬・薬価など）
+    - 経済の大きな動き（金利・為替・株価の大きな変動、大企業の重要な発表）
+    - 国内政治・国際情勢の大きな出来事（日本への影響があるもの）
+    - 医療・科学・テクノロジーの新しい知見や発表
+    - 大規模な災害・事故（多くの人に影響するもの）
+  exclude: |
+    芸能・ゴシップ、スポーツの試合結果、囲碁・将棋、個別の小さな事件事故（被害が限られるもの）、
+    地域限定の話題、季節の風物詩、行事やイベントの紹介、
+    地震情報・医薬品の供給情報（別のチャンネルで受け取っているので不要）
+  adopt: 上の関心に合う、事実が具体的に書かれたニュース
+  interests:
+    - 医療・薬に関する制度や政策
+    - 生活費（物価・税・補助）に関わること
+  # 見出しの分類
+  tags: [政治・制度, 経済・暮らし, 国際, 医療・科学・IT, 社会, その他]
+  # 分類の目安（LLMへの説明）
+  tag_guide: 海外で起きた出来事は内容にかかわらず「国際」。日本の物価・企業・金融は「経済・暮らし」。日本の事件・事故・災害は「社会」
+  tag_style:
+    政治・制度: {emoji: '🏛️', color: '#5C6BC0'}
+    経済・暮らし: {emoji: '💴', color: '#43A047'}
+    国際: {emoji: '🌏', color: '#26A69A'}
+    医療・科学・IT: {emoji: '🔬', color: '#AB47BC'}
+    社会: {emoji: '🏙️', color: '#FFA726'}
+  # 先頭に「今日の動向まとめ」（3行程度の全体要約）を付ける（問い合わせが1回増える）
+  overview:
+    enabled: true
+    audience: 忙しい社会人（医療職）。朝の数分でニュースをつかみたい
+    group_by: 分類
+    # まとめの組み立て方（書かなければ「分類ごとに見出し＋影響・注意点」。ニュースは事実の箇条書きだけにする）
+    layout: 今日いちばん大事な出来事を3〜5個、箇条書きで（見出しは付けない）
+    max_chars: 400
+    rules:
+      - 3〜5個の箇条書きだけで、見出しは付けない。各行は1文・60字以内、です・ます調
+      - 記事に書かれた事実だけを書く。影響・教訓・助言（「〜が求められる」「〜に注意が必要」「医療現場にも〜」など）は書かない
+  # LLMが使えないときの絞り込みキーワード
+  fallback_keywords: [政府, 閣議, 法案, 物価, 金利, 日銀, 為替, 株価, 医療, 薬, 診療報酬, 年金, 税, 補助, 選挙, 首相, 大統領]
+
+  # 情報源（NHK は広告がなく、RSSに要約が付いているので主力。見出しだけのRSSは要約の材料が無いので入れていません）
+  sources:
+    - name: NHK 主要
+      url: https://www.nhk.or.jp/rss/news/cat0.xml
+    - name: NHK 政治
+      url: https://www.nhk.or.jp/rss/news/cat4.xml
+    - name: NHK 経済
+      url: https://www.nhk.or.jp/rss/news/cat5.xml
+    - name: NHK 国際
+      url: https://www.nhk.or.jp/rss/news/cat6.xml
+    - name: NHK 科学・医療
+      url: https://www.nhk.or.jp/rss/news/cat3.xml
+    - name: NHK 社会
+      url: https://www.nhk.or.jp/rss/news/cat1.xml
+    - name: ITmedia NEWS
+      url: https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml
 
 # ==== がん薬物療法ニュース（国内中心・週単位・曜日テーマ）====
 # src/onco_news.py が動かします（タスク「info-digest onco」毎日 6:30）。
@@ -436,7 +520,7 @@ note_weekly:
     # true（画面なし）は note のエディタの読み込みが終わらず失敗する（2026-10-21 確認）
     headless: false
 
-# ==== note 水曜号「保険と公費のギモン」（src/note_hoken.py、タスク「info-digest note hoken」毎週水曜 22:00） ====
+# ==== note 水曜号「保険と公費のギモン」（src/note_hoken.py、タスク「info-digest note hoken」毎週水曜 7:00） ====
 # 行政資料（疑義解釈・通知・事務連絡）から Strata がテーマを決め、NotebookLM が Q&A と音声を作り、note に下書き保存する
 note_hoken:
   enabled: true
@@ -493,7 +577,7 @@ qa_bot:
   # NotebookLM の音声は1日3本（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
   audio_reserve:
     - {until: "07:30", n: 2}               # 学習 6:00・ニュース 6:30
-    - {weekday: 2, until: "23:00", n: 1}   # 水曜号 22:00（weekday: 0=月 … 6=日）
+    - {weekday: 2, until: "09:30", n: 1}   # 水曜号 7:00（weekday: 0=月 … 6=日。2026-10-29 に 22:00 から移動）
   # 音声待ちを確認する間隔（分）
   audio_check_minutes: 20
   notebook: {}
@@ -508,7 +592,7 @@ strata_chat:
   enabled: true
   # ペルソナは style/personas/*.yaml（1人1ファイル）。トークチャンネルで「!ペルソナ 名前」で切り替え（最後に選んだものを覚える）
   persona_dir: style/personas
-  default_persona: luna
+  default_persona: shirabe   # トークチャンネルのペルソナ。ルナは別アカウントの Bot・専用チャンネル（.env の DISCORD_LUNA_*）
   # 自宅の SearXNG（D:\searxng。タスク「SearXNG」がログオン時に起動）
   searxng_url: http://127.0.0.1:8888
   search: true
@@ -525,12 +609,42 @@ strata_chat:
   reasoning_budget_tokens: 512
   # スキル「小説」（ペルソナの skills に novel があるとき）
   novel:
-    chars: 2500            # だいたいの長さ（字）。会話で指定があればそちら
+    chars: 4000            # 指示する長さ（字）。会話で指定があればそちら。Gemma は指定より短く書きがち（2500 で実際は900〜1200字）。およそ3000字を狙って 4000（2026-10-29）
     max_tokens: 8000       # 考える分も含めた上限。長編にするなら増やす（そのぶん時間がかかる）
     temperature: 0.75
     reasoning_budget_tokens: 1024
     prev_chars: 6000       # 「続き」を書くときに読み返す前回の話の長さ
-  # 嗜好の記憶（ペルソナの memory: true のとき）。中身は .local/state/strata_memory_<id>.json
+  # 嗜好の記憶（ペルソナの memory: true のとき）。中身は .local/persona/<id>_memory.md（手で編集してよい）
   memory:
     max_items: 80          # これを超えたら古いものから忘れる
+    compact_at: 50         # これを超えたら、似たものをまとめて compact_to 件に減らす（「!記憶 まとめ」で手でも。45件≒1000トークン）
+    compact_to: 30
     announce: true         # 新しく覚えたことを小さい字でチャンネルに出す
+  # ルナ（Gemma 4 26B、llama.cpp :8090）に GPU を貸すときの決まり（src/gpu_mode.py）
+  luna:
+    idle_minutes: 20           # これだけ話さなければ Strata（しらべ）に戻す
+    draw_idle_minutes: 30      # お絵描きモード（ComfyUI）で、ComfyUI が動かず発言もないままこれだけ経てば Gemma に戻す
+    guard_before_minutes: 15   # 定時の配信の何分前から貸さないか
+    # 定時の配信（Windows のタスク）。この前後はルナ・ComfyUI に切り替えない（minutes = 配信にかかる目安）
+    schedule:
+      - {at: "05:30", minutes: 15, name: AI}
+      - {at: "05:35", minutes: 25, name: AI global}
+      - {at: "06:00", minutes: 60, name: 学習}
+      - {at: "06:30", minutes: 60, name: がん薬物療法}
+      - {at: "07:00", minutes: 90, name: note hoken, weekdays: [2]}   # 2026-10-29 に 22:00 から朝へ
+      - {at: "07:00", minutes: 90, name: note, weekdays: [5]}
+  # ルナの絵（ComfyUI の MOSS-Image。src/comfy_client.py）。プロンプトは .local/luna/prompts/*.json に残す
+  moss:
+    prompt_count: 20           # 1回に作るプロンプト案の数（100 だとルナの速度で20〜30分かかったので 2026-10-28 に 20 へ）
+    batch: 20                  # 1回の問い合わせで作る数
+    draw_count: 4              # 「おまかせ」で描く枚数（描画セットより前の、プロンプト案だけのファイル用）
+    situation_count: 20        # 描画セットのシチュエーションの数（人物の候補5枚で選んだあと、これを1巡描く。そのあとは数字で追加）
+    quality: [best quality, highres]
+    negative: "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"
+    steps: 25
+    cfg: 2.5
+    sampler: er_sde
+    scheduler: simple
+    unet: moss_image_sft_int8_convrot.safetensors
+    clip: qwen3.5_9b_w4a8_gptq.safetensors
+    vae: flux2-vae_small.safetensors
