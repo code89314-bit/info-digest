@@ -222,6 +222,9 @@ LCFG["max_items"] = 2
 CALLS.clear()
 assert len(ai_digest.select_with_llm(CANDS, LCFG)) == 2  # 件数上限
 LCFG["max_items"] = 3
+CALLS.clear()
+got = ai_digest.select_with_llm(CANDS, {**LCFG, "max_per_source": 1})   # 全部 Zenn → 1件まで（スコア最高）
+assert [p["link"] for p in got] == ["https://ex.com/2"], got
 
 
 # サーバーが落ちている → None（main() はキーワード一致に落ちる）
@@ -525,10 +528,11 @@ print("✅ ja_fix")
 
 # ---------- 区画ごとの要約・分類・動向まとめの書き方（summary_rule / tag_guide / overview.layout） ----------
 one = [{"source": "s", "title": "t", "summary": "x"}]
-p = ai_digest.build_prompt(one, {"summary_rule": "事実だけを1文", "tag_guide": "海外は国際"}, 200)
+p = ai_digest.build_prompt(one, {"summary_rule": "事実だけを1文", "tag_guide": "海外は国際", "title_rule": "助詞を省かない"}, 200)
 assert "summary_ja: 事実だけを1文（120字以内）" in p and "のいずれか（海外は国際）" in p
+assert "title_ja: 助詞を省かない（40字以内）" in p
 p = ai_digest.build_prompt(one, {}, 200)   # 書かなければ今までどおり
-assert "何が新しく、なぜ重要かを1〜2文" in p and "のいずれか\n" in p
+assert "何が新しく、なぜ重要かを1〜2文" in p and "のいずれか\n" in p and "title_ja: 内容が分かる簡潔な見出し（40字以内）" in p
 assert ai_digest.overview_layout({"layout": "箇条書きだけ"}) == "箇条書きだけ"
 assert ai_digest.overview_layout({"group_by": "がん種"}).startswith("がん種ごとに **太字の見出し**")
 print("✅ summary_rule / tag_guide / layout")

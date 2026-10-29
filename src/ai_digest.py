@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 
 import feedparser
 import requests
@@ -122,7 +123,7 @@ PROMPT = """あなたは情報キュレーターです。以下は過去1日ほ�
 - 最大 {max_items} 件。該当が少なければ少なくてよい（0件も可）。
 
 各採用記事について、日本語で（英語の記事も日本語で書く）:
-- title_ja: 内容が分かる簡潔な見出し（40字以内）
+- title_ja: {title_rule}（40字以内）
 - summary_ja: {summary_rule}（{summary_len}字以内）。誇張しない。候補に書かれていない事実を補わない
 - 日本語は自然に。英語の病名・一般的な語は日本語の標準的な用語に訳す（薬剤名・製品名・試験名は原語のままでよい）。
   中国語の字体（简体字・繁體字）を使わない
@@ -270,6 +271,7 @@ def build_prompt(batch: list[dict], cfg: dict, summary_chars: int) -> str:
     adopt = (cfg.get("adopt") or "上の関心に直接役立つ新モデル・新機能・リリース・実用的な手法や検証").strip()
     return PROMPT.format(focus=focus, exclude=exclude, interests="、".join((cfg.get("interests") or [])) or "特になし",
                          adopt=adopt, summary_len=cfg.get("summary_len", 120),
+                         title_rule=(cfg.get("title_rule") or "内容が分かる簡潔な見出し").strip(),
                          summary_rule=(cfg.get("summary_rule") or "何が新しく、なぜ重要かを1〜2文").strip(),
                          tag_guide=f"（{cfg['tag_guide'].strip()}）" if cfg.get("tag_guide") else "",
                          max_items=cfg.get("max_items", 12), tags="／".join(get_tags(cfg)),
@@ -330,6 +332,15 @@ def select_with_llm(items: list[dict], cfg: dict) -> list[dict] | None:
         keys |= k
         out.append(p)
     limit = cfg.get("max_items", 12)
+    # 1つの情報源からは max_per_source 件まで（Reddit ばかり、のような偏りを抑える）
+    cap = int(cfg.get("max_per_source") or 0)
+    if cap:
+        per, kept = Counter(), []
+        for p in out:
+            per[p["source"]] += 1
+            if per[p["source"]] <= cap:
+                kept.append(p)
+        out = kept
     if llm.get("dedupe") and len(out) > 1:
         out = dedupe_with_llm(out[: limit * 2], llm, chat)
     return out[:limit]
