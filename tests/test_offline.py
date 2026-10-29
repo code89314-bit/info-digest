@@ -537,6 +537,47 @@ assert ai_digest.overview_layout({"layout": "箇条書きだけ"}) == "箇条書
 assert ai_digest.overview_layout({"group_by": "がん種"}).startswith("がん種ごとに **太字の見出し**")
 print("✅ summary_rule / tag_guide / layout")
 
+# ---------- 朝のニュースの米国株の欄（news.market） ----------
+import market  # noqa: E402
+
+
+class FakeQuote:
+    def __init__(self, closes):
+        self.closes = closes
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"chart": {"result": [{"meta": {"gmtoffset": -14400}, "timestamp": [1793131200, 1793217600, 1793304000],
+                                      "indicators": {"quote": [{"close": self.closes}]}}]}}
+
+
+QUOTES = {"^GSPC": [7700.0, 7743.6, 7720.39], "GOOGL": [320.0, 324.8, 283.82], "AAPL": [340.0, 343.8, None]}
+market.requests.get = lambda url, **k: FakeQuote(QUOTES[market.urllib.parse.unquote(url.split("/chart/")[1].split("?")[0])])
+market.fetch_rss = lambda src, since: [
+    {"title": "アルファベット決算に失望、株価急落 - Reuters", "link": "https://ex.com/a"},
+    {"title": "エヌビディア【NVDA】：株価・株式情報 - Yahoo!ファイナンス", "link": "https://ex.com/y"},
+    {"title": "アルファベット決算に失望、株価急落 - Reuters", "link": "https://ex.com/a2"}]
+MPROMPTS = []
+ai_digest.requests.post = lambda url, headers=None, json=None, timeout=None: (
+    MPROMPTS.append(json["messages"][0]["content"]) or FakeChat(market.json.dumps(
+        {"sp500": "S&P500は小幅に下落しました。", "sp500_refs": [0],
+         "movers": [{"name": "アルファベット", "text": "決算に失望し急落しました。", "refs": [0, 9]}],
+         "releases": []}, ensure_ascii=False)))
+MCFG = {**LCFG, "market": {"quotes": [{"symbol": "^GSPC", "name": "S&P500"}, {"symbol": "GOOGL", "name": "アルファベット"},
+                                      {"symbol": "AAPL", "name": "アップル"}],
+                           "skip_titles": ["株価・株式情報"], "sources": [{"name": "G", "url": "u"}]}}
+emb = market.build_embed(MCFG)
+assert emb["title"] == "📈 米国株（10/29 終値）", emb["title"]
+d = emb["description"]
+assert d.startswith("**S&P500 7,720.39（-0.30%）**") and "アルファベット -12.6%｜アップル +1.1%" in d, d
+assert "[Reuters](https://ex.com/a)" in d and "業績に影響しそうな発表" not in d   # 空の欄は出さない
+assert "株価・株式情報" not in MPROMPTS[0] and MPROMPTS[0].count("アルファベット決算に失望") == 1   # 除外・重複除去
+ai_digest.requests.post = lambda *a, **k: (_ for _ in ()).throw(ai_digest.requests.ConnectionError("down"))
+assert "解説はLLMが使えなかった" in market.build_embed(MCFG)["description"]   # LLMが落ちても株価は出す
+print("✅ market")
+
 # ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------
 import note_weekly  # noqa: E402
 
