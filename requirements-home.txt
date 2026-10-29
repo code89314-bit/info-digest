@@ -1,0 +1,5 @@
+# 自宅PC（D:\info-digest\.venv）で使う追加パッケージ。GitHub Actions は requirements.txt だけを使う
+# pip install -r requirements.txt -r requirements-home.txt  → 続けて  python -m playwright install chromium
+discord.py>=2.7
+pillow>=12.0
+playwright>=1.60

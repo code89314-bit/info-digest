@@ -1,0 +1,29 @@
+# D:\searxng のローカル設定（SEARXNG_SETTINGS_PATH で指定）。git 管理外。
+use_default_settings:
+  engines:
+    keep_only:
+      - google
+      - bing
+      - duckduckgo
+      - brave
+      - wikipedia
+      - pubmed
+      - google scholar
+general:
+  instance_name: "omamori-search"
+search:
+  safe_search: 0
+  default_lang: "ja"
+  formats:
+    - html
+    - json
+server:
+  bind_address: "127.0.0.1"
+  port: 8888
+  secret_key: "CHANGE-ME"   # 再構築時に python -c "import secrets;print(secrets.token_hex(32))" で作る
+  limiter: false
+  public_instance: false
+  image_proxy: false
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0

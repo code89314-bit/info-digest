@@ -25,7 +25,7 @@ GitHub Actions（無料・Public リポジトリ）で定期実行し、Discord 
 |---|---|---|---|---|
 | 地震・津波情報 | `src/earthquake.py` | P2P地震情報 API v2 `https://api.p2pquake.net/v2/history?codes=551&codes=552` | 5分ごと | 稼働中 |
 | 医薬品供給情報 | `src/drug_supply.py` | 厚労省「医療用医薬品供給状況報告」ページの最新Excel（`今回掲載時の更新有無`= New の行） | 平日 10:17 / 13:17 / 16:17 / 19:17 | 稼働中 |
-| AI・LLMダイジェスト | `src/ai_digest.py` | Zenn・Qiita のタグ別RSS（11本、`config.yaml` 参照） | 毎日 17:00 | 稼働中 |
+| AI・LLMダイジェスト | `src/ai_digest.py` | Zenn・Qiita のタグ別RSS（11本、`config.yaml` 参照） | 毎日 5:30 | 稼働中 |
 
 ```
 config.yaml                 全設定（ユーザーが直接編集する前提。日本語コメントあり）
@@ -97,13 +97,13 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 
 ### 3-5. 実施結果（2026-10-21、LLMサーバー上の Claude Code）
 
-- LLMサーバー = このリポジトリを置いたWindows PC（`D:\info-digest`）。LLM は同じPCの **Strata**（Qwen3.8-Flash-Next Q2_0、`http://127.0.0.1:8080/v1`、APIキー必須）。
+- LLMサーバー = このリポジトリを置いたWindows PC（`D:\info-digest`）。LLM は同じPCの **Strata**（2026-10-30 から Qwen3.6-35B-A3B。それまでは Qwen3.8-Flash-Next Q2_0。`http://127.0.0.1:8080/v1`、APIキー必須）。
 - `ai_digest.llm`（`config.yaml`）で `openai_compat` / `anthropic` / `none` を切り替え。`extra_body` はサーバー独自の項目をそのまま渡す（Strata は `reasoning_budget_tokens`）。
 - バッチ選別（既定25件）→ 重複除去 → `score` 順に `max_items` 件。`<think>` 除去・JSON解釈失敗時1回再試行・`response_format` 非対応なら外して再送。
 - 秘密情報は `.env`（`common.load_dotenv()` が読む）。既読管理は `INFO_DIGEST_STATE_DIR=D:\info-digest\.local\state`（`state/ai_digest.json` の内容で初期化済み）。`.env` `.venv/` `.local/` は `.gitignore` 済み。
-- 定期実行: タスクスケジューラ「info-digest AI」が毎日 17:00 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
+- 定期実行: タスクスケジューラ「info-digest AI」が毎日 5:30 に `scripts/run_ai_digest.ps1` を実行（PC停止中に過ぎた分は起動後に実行）。LLMサーバーが応答しなければ最大180分待ち（ComfyUI使用中など）、それでもだめならキーワード一致で投稿。ログは `.local/logs/`。
 - `.github/workflows/ai_digest.yml` の `schedule:` はコメントアウト（`workflow_dispatch` は残した）。
-- 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 12:00。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
+- 追加: **海外の話題** `ai_global`（`config.yaml` の別区画）。Reddit（r/LocalLLaMA・r/comfyui・r/StableDiffusion の日間上位）・Hacker News・HFトレンド・ComfyUI/Ollama のリリースを、LLMが日本語で要約して**別チャンネル**（`DISCORD_WEBHOOK_AI_GLOBAL`）に投稿。`python src/ai_digest.py ai_global` で実行、既読管理は `state/ai_global.json`、`llm:` を省略すると `ai_digest` の設定を使う。タスク「info-digest AI global」が毎日 5:35（2026-10-28 に 12:00 から変更。休日の日中にルナ・ComfyUI と重ならないよう朝にまとめた）。候補110件で約10分。#ai-llm の「日本語記事のみ」の方針はそのまま。
 
 - 追加: **がん薬物療法** `onco`（`config.yaml` の別区画、`DISCORD_WEBHOOK_ONCO`）。国内（PMDA 承認審査・安全対策、厚労省 報道発表、Minds）＋海外（ESMO・NCI・OncLive・Targeted Oncology・CancerNetwork。FDA公式はこのPCから403/404のため報道で代替）。
   - 投稿の先頭に LLM が書く「📋 今日の動向まとめ」（`overview`、がん種別）。冒頭に注意書き（`notice`）。
@@ -186,6 +186,29 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 設定のリストが空（YAMLで `None` になる）でも落ちないこと。過去に `watchlist:` が空で落ちたため、`cfg.get("x") or []` の形にしてある。
 - 秘密情報（Webhook URL・APIキー）をコードやコミットに含めない。
 - ユーザーは非エンジニア寄り。説明は日本語で、手順は具体的に書くこと。
+
+## 朝のニュース（広告なしの自分専用ニュース）2026-10-29
+
+- 目的: Yahoo!ニュースのリンク先が広告だらけで、欲しくない情報も多い。関心に合うものだけを Discord で読みたい。
+- コードの追加なし。`config.yaml` の区画 `news` を `src/ai_digest.py news` で動かす（`ai_global` と同じ仕組み）。
+- 情報源は NHK の RSS（主要・政治・経済・国際・科学医療・社会。広告なし・RSSに約100字の要約あり）と ITmedia NEWS。
+  Yahoo・時事・朝日の RSS は見出しだけで要約の材料が無いので入れていない（Yahoo のリンク先も広告ページ）。
+- 関心は `focus` / `exclude` / `interests`。地震・医薬品供給は別チャンネルにあるので除外。先頭に3〜5行の「今日の動向まとめ」（`overview`）。
+- 投稿先 `DISCORD_WEBHOOK_NEWS`（.env）。既読管理 `state/news.json`。タスク「info-digest news」毎朝 6:50（`run_ai_digest.ps1 -Section news`）。
+
+## Strata のモデルを Qwen3.6-35B-A3B に切り替え（2026-10-30）
+
+- 旧: Qwen3.8-Flash-Next Q2_0（プリセット「Q2_0 32K」）。重み約35.5GBが RAM 32GB に収まらず、毎回 SSD から読み直していた
+  （1リクエストで約200GB読み込み・GPU 10〜70W・ニュース25件の選別 240秒）。
+- 新: Qwen3.6-35B-A3B UD-Q4_K_XL（22.9GB、プリセット「Qwen36 32K」、access tailscale・APIキーは同じ、画像は CPU で読む）。
+  同じ25件で 30秒、生成 69 tok/s、SSD 読み込みなし。モデル名は何を送っても受け付ける（持参薬アプリの既定値のままでよい）。
+- 変更: `D:\Strata\scripts\` の autostart / llm-mode / comfy-mode / luna-mode のプリセット名（元は `*.bak-q2_0`）、`config.yaml` の `ai_digest.llm.model`。
+  keepalive（タスク「Strata AutoStart」）は起動時にスクリプトを読むので、プリセットを変えたらタスクを再起動すること。
+- 比較テスト（同じ入力。スクリプトは試験用に scratchpad で作成）:
+  - お薬手帳 OCR の薬品名: Q2_0 1/6、Qwen3.6 3/6（読めない字を「ロキソニン」など実在の別の薬で埋めることがある）、Gemma 4 heretic 5/6
+  - がん薬物療法の際どい質問8問: Qwen3.6・Gemma とも拒否0。正確さは Qwen3.6 が上（Gemma は 5-FU の用量を逆、デクスラゾキサンを皮下注などの誤り）
+  - Strata の拒否抑制（experimental speed projection＝拒否方向の射影ベクトル）は Flash-Next 専用で Qwen3.6 には使えない。必要になったら llama.cpp で heretic 版を動かす案がある
+- 戻すとき: スクリプトを `*.bak-q2_0` に戻し、`config.yaml` の model を戻して、タスク「Strata AutoStart」を再起動。
 
 ## 疑問深堀り（Discord の疑問深堀チャンネル → note の下書き）2026-10-22
 
