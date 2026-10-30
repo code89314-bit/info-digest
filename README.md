@@ -113,6 +113,11 @@ python -m venv .venv
    & $S launch --family qwen36 --model ud-q4_k_xl --context 32k --vision cpu --access tailscale --port 8080 `
        --api-key-env LOCAL_LLM_API_KEY --save-preset 'Qwen36 32K' --no-tui --yes
    ```
+   **持参薬鑑別アプリ（ブラウザ）から使うなら必須**: モデルの設定ファイル
+   `%LOCALAPPDATA%\Strata\install\strata-qwen36-ud-q4_k_xl.json` の最後に
+   `"cors_origins": ["https://code89314-bit.github.io"]` を足して、Strata を起動し直す
+   （`& $S launch --stop --preset 'Qwen36 32K'` → keepalive が1分以内に起動）。
+   これが無いとブラウザが応答を捨て、アプリは「サーバにつながりません」になる（モデルを入れ替えるたびに必要。2026-10-30）
 5. 切り替えスクリプトを置く:
    ```powershell
    New-Item -ItemType Directory -Force D:\Strata\scripts
@@ -229,6 +234,7 @@ Start-ScheduledTask -TaskName 'info-digest news'              # 本番を1回（
 | 症状 | 見るところ・対処 |
 |---|---|
 | 朝のダイジェストが来ない | `.local\logs\<区画>-日付.log`。`llm server still down` なら Strata が止まっている |
+| 持参薬アプリが「サーバにつながりません」 | Strata は動いているのにブラウザだけつながらない → モデル設定の `cors_origins`（3-4 の注記）。確認: `curl -X OPTIONS -H "Origin: https://code89314-bit.github.io" -H "Access-Control-Request-Method: POST" -D - https://<PC名>.<tailnet>.ts.net:8445/v1/chat/completions` に `Access-Control-Allow-Origin` があるか |
 | Strata が止まっている | `strata.cmd launch --status --preset "Qwen36 32K"`。`D:\Strata\comfy-mode.flag` があると keepalive が止まったまま → `llm-mode.ps1` |
 | しらべの検索ができない | SearXNG（`http://127.0.0.1:8888`）。タスク「SearXNG」を実行 |
 | NotebookLM が使えない | `notebooklm auth refresh`。だめなら 3-7 のログインをやり直す |
