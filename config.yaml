@@ -295,6 +295,53 @@ news:
       - name: "Google News: US announcements"
         url: https://news.google.com/rss/search?q=Nvidia%20OR%20Alphabet%20OR%20Google%20OR%20Meta%20announces%20OR%20unveils%20OR%20deal%20OR%20acquisition%20OR%20guidance%20when%3A1d&hl=en-US&gl=US&ceid=US:en
 
+  # ---- 沿線の情報の欄（src/local_events.py）。株式の欄の次に1つ付きます（問い合わせが1回増える） ----
+  # 申込が要るイベント・イベント・新しいお店を見出しから拾い、日付・締切を覚えておいて、近づいたら「⏰ もうすぐ」で毎朝知らせます。
+  # 見つけたものは .local/state/local_events.json（手で消してもよい）。日付は見出しに書いてあるものだけ
+  local:
+    enabled: true
+    title: 📍 横浜線沿線（町田〜橋本）
+    audience: JR横浜線の町田〜橋本の沿線に住む社会人。週末の予定や、申込の締切を忘れたくない
+    area: >-
+      JR横浜線の町田駅〜橋本駅の沿線（町田市、相模原市の中央区・南区・緑区の橋本周辺。駅は町田・古淵・淵野辺・矢部・相模原・橋本。
+      南町田・相模大野・多摩境も近いので含める）
+    # 地域の外でも知らせてほしいもの（全国の抽選・エントリーなど）
+    extra: |
+      全国でも: スターバックスの福袋の抽選販売・エントリーだけ（受付の開始日と締切を拾う。福袋以外のキャンペーン・新商品は選ばない）
+    exclude: >-
+      プロスポーツの試合の告知（SC相模原・FC町田ゼルビアの試合や、相手チームの記事）、事件・事故、求人・職員募集、選挙、
+      行政の計画・会議・統計、企業の決算、すでに終わったイベントの報告、全国のポイント還元・キャッシュレス決済のキャンペーン
+    lookback_days: 7          # 何日前までの見出しを見るか（イベントは数週間前に告知されるので長め）
+    remind_days: 7            # 締切・開催日の何日前から「⏰ もうすぐ」に出すか
+    # 1日に新しく載せる最大数（分類ごと。日付の近い順。あふれたものも覚えておき、近づいたら「⏰ もうすぐ」に出す）
+    max_per_kind: {entry: 10, event: 15, opening: 8}
+    max_headlines: 250        # LLM に見せる見出しの最大数
+    batch: 50                 # 1回の問い合わせで読ませる見出しの数（多すぎると先頭からしか選ばない）
+    max_items_per_batch: 15   # 1回の問い合わせで選ばせる最大数
+    max_chars: 3800           # 欄の長さの上限（Discord の欄の上限は4096字。Googleニュースのリンクは1本250字ほど）
+    skip_titles: ["求人", "アルバイト", "中古", "賃貸", "不動産"]
+    sources:
+      - name: 号外NET 町田市
+        url: https://machida.goguynet.jp/feed/
+      - name: "Googleニュース: 相模原 イベント"
+        url: https://news.google.com/rss/search?q=%E7%9B%B8%E6%A8%A1%E5%8E%9F%20%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      - name: "Googleニュース: 町田 イベント"
+        url: https://news.google.com/rss/search?q=%E7%94%BA%E7%94%B0%20%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      # 検索語: 橋本駅 OR 淵野辺 OR 古淵 OR 矢部 OR 相模原駅 イベント OR オープン
+      - name: "Googleニュース: 横浜線の駅"
+        url: https://news.google.com/rss/search?q=%E6%A9%8B%E6%9C%AC%E9%A7%85%20OR%20%E6%B7%B5%E9%87%8E%E8%BE%BA%20OR%20%E5%8F%A4%E6%B7%B5%20OR%20%E7%9F%A2%E9%83%A8%20OR%20%E7%9B%B8%E6%A8%A1%E5%8E%9F%E9%A7%85%20%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88%20OR%20%E3%82%AA%E3%83%BC%E3%83%97%E3%83%B3%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      - name: "Googleニュース: 相模原 開店"
+        url: https://news.google.com/rss/search?q=%E7%9B%B8%E6%A8%A1%E5%8E%9F%20%E3%82%AA%E3%83%BC%E3%83%97%E3%83%B3%20OR%20%E9%96%8B%E6%A5%AD%20OR%20%E6%96%B0%E5%BA%97%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      - name: "Googleニュース: 町田 開店"
+        url: https://news.google.com/rss/search?q=%E7%94%BA%E7%94%B0%20%E3%82%AA%E3%83%BC%E3%83%97%E3%83%B3%20OR%20%E9%96%8B%E6%A5%AD%20OR%20%E6%96%B0%E5%BA%97%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      - name: "Googleニュース: JAXA 相模原キャンパス"
+        url: https://news.google.com/rss/search?q=JAXA%20%E7%9B%B8%E6%A8%A1%E5%8E%9F%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%91%E3%82%B9%20OR%20%E5%AE%87%E5%AE%99%E7%A7%91%E5%AD%A6%E7%A0%94%E7%A9%B6%E6%89%80%20%E5%85%AC%E9%96%8B%20OR%20%E7%94%B3%E8%BE%BC%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      # 検索語: 相模原 OR 町田 申込 OR 抽選 OR 参加者募集 OR 事前予約
+      - name: "Googleニュース: 相模原・町田 申込"
+        url: https://news.google.com/rss/search?q=%E7%9B%B8%E6%A8%A1%E5%8E%9F%20OR%20%E7%94%BA%E7%94%B0%20%E7%94%B3%E8%BE%BC%20OR%20%E6%8A%BD%E9%81%B8%20OR%20%E5%8F%82%E5%8A%A0%E8%80%85%E5%8B%9F%E9%9B%86%20OR%20%E4%BA%8B%E5%89%8D%E4%BA%88%E7%B4%84%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+      - name: "Googleニュース: スターバックス 福袋・抽選"
+        url: https://news.google.com/rss/search?q=%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%90%E3%83%83%E3%82%AF%E3%82%B9%20%E7%A6%8F%E8%A2%8B%20OR%20%E6%8A%BD%E9%81%B8%20OR%20%E3%82%A8%E3%83%B3%E3%83%88%E3%83%AA%E3%83%BC%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
+
   # 情報源（NHK は広告がなく、RSSに要約が付いているので主力。見出しだけのRSSは要約の材料が無いので入れていません）
   sources:
     - name: NHK 主要

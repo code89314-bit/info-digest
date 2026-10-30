@@ -590,6 +590,45 @@ d = market.build_embed(MCFG)["description"]
 assert "グーグルが新型AI" in d and "インテル" not in d   # 対象外の企業の発表は載せない
 print("✅ market")
 
+# ---------- 朝のニュースの沿線の欄（news.local） ----------
+import local_events  # noqa: E402
+
+T = dt.date(2026, 10, 31)
+assert local_events.to_date("11-07", T) == dt.date(2026, 11, 7)
+assert local_events.to_date("01-05", dt.date(2026, 12, 20)) == dt.date(2027, 1, 5)   # 年をまたぐ
+assert local_events.to_date("", T) is None and local_events.to_date("13-40", T) is None
+assert local_events.same_as_any("スターバックス福袋2027抽選販売", ["スターバックス福袋2027"])
+assert not local_events.same_as_any("ゴンチャ ルミネ町田店", ["まちだイイモノ〇ごと祭2026"])
+local_events.fetch_rss = lambda src, since: [
+    {"title": "宇宙交差天 11/7・8開催、JAXA特別公開は要申込 - タウンニュース", "link": "https://ex.com/j"},
+    {"title": "スタバ福袋2027、11月4日から抽選受付 - Yahoo!ニュース", "link": "https://ex.com/s"},
+    {"title": "座間市民を無料招待、10月25日まで申込 - タウンニュース", "link": "https://ex.com/z"},
+    {"title": "ゴンチャ ルミネ町田店オープン", "link": "https://ex.com/g", "source": "号外NET 町田市"}]
+LPROMPTS = []
+ai_digest.requests.post = lambda url, headers=None, json=None, timeout=None: (
+    LPROMPTS.append(json["messages"][0]["content"]) or FakeChat(market.json.dumps({"items": [
+        {"kind": "entry", "name": "JAXA相模原キャンパス特別公開", "place": "相模原", "date": "11-07", "date_end": "11-08",
+         "deadline": "", "entry_start": "", "note": "要申込", "ref": 0},
+        {"kind": "entry", "name": "スターバックス福袋2027", "date": "", "deadline": "", "entry_start": "11-04", "note": "抽選", "ref": 1},
+        {"kind": "entry", "name": "スターバックス福袋2027抽選販売", "entry_start": "11-04", "ref": 1},      # 同じもの
+        {"kind": "entry", "name": "座間市ホームタウンデー", "deadline": "10-25", "ref": 2},                  # 締切が過ぎた
+        {"kind": "opening", "name": "クレーン横丁", "note": "抽選の可能性あり（詳細不明）", "ref": 3},       # 推測
+        {"kind": "opening", "name": "ゴンチャ ルミネ町田店", "date": "10-30", "ref": 3}]}, ensure_ascii=False)))
+LOC = {**LCFG, "local": {"title": "📍 沿線", "area": "町田〜橋本", "sources": [{"name": "G", "url": "u"}], "remind_days": 7}}
+embs = local_events.build_embeds(LOC, today=T)
+assert [e["title"] for e in embs] == ["📍 沿線｜✍️ 申込・エントリーが必要", "📍 沿線｜🍽️ 新しいお店・施設"], embs
+d = embs[0]["description"]
+assert d.index("受付 11/4(水)〜") < d.index("【11/7(土)〜11/8(日)】**JAXA") and d.count("スターバックス") == 1   # 日付の近い順・重複なし
+assert "座間" not in d and "クレーン" not in embs[1]["description"]
+assert "[号外NET 町田市](https://ex.com/g)" in embs[1]["description"]
+# 翌朝: 同じ見出しは読ませない。覚えているものは、近づいたら「⏰ もうすぐ」に出る
+LPROMPTS.clear()
+embs = local_events.build_embeds(LOC, today=dt.date(2026, 11, 3))
+assert LPROMPTS == [] and embs[0]["title"] == "📍 沿線｜⏰ もうすぐ"
+assert "11/4(水) 受付開始：**スターバックス福袋2027**" in embs[0]["description"]
+assert "11/7(土) 開催：**JAXA相模原キャンパス特別公開**" in embs[0]["description"]
+print("✅ local events")
+
 # ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------
 import note_weekly  # noqa: E402
 
