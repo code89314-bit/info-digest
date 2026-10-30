@@ -19,6 +19,7 @@ from common import ROOT, load_config
 STYLE = ROOT / "style" / "nlm_notebooks.yaml"
 IDS = ROOT / ".local" / "nlm_notebooks.json"
 NO_SOURCE = "【資料なし】"   # ノートの資料に答えが無いとき、1行目に書かせる印
+FILE_TYPES = {".pdf", ".txt", ".md", ".docx"}   # folder から資料に入れるファイル
 
 ROUTE_PROMPT = """次の質問は、下のどのノート（分野）で調べるのがよいですか。
 分野がはっきり合うときだけ選び、どれにも当てはまらない・迷うときは "none"。
@@ -91,8 +92,16 @@ def build(key: str, *, research: bool | set = True) -> str:
     urls = [u for u in nb.get("urls") or [] if u not in {s["url"] for s in book.sources()}]
     if urls:
         print(f"URL の資料: {len(book.add_urls(urls))}/{len(urls)} 件")
-    for f in nb.get("files") or []:
+    files = list(nb.get("files") or [])
+    if nb.get("folder"):   # 置いた PDF など（ガイドライン・適正使用ガイド）。まだ入っていないものだけ
+        folder = ROOT / nb["folder"]
+        folder.mkdir(parents=True, exist_ok=True)
+        titles = {s["title"] for s in book.sources()}
+        files += [str(p) for p in sorted(folder.iterdir())
+                  if p.suffix.lower() in FILE_TYPES and p.name not in titles and p.stem not in titles]
+    for f in files:
         podcast_nlm._cli(pod, ["source", "add", f, "-n", book.nb, "--json"], check=False)
+        print(f"ファイル: {f}", flush=True)
     prompts = nb.get("research") or []
     for i, prompt in enumerate([prompts] if isinstance(prompts, str) else prompts if research else []):
         if research is not True and i not in research:   # build(..., research={2, 3}) で一部だけやり直す
