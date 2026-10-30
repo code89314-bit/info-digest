@@ -537,7 +537,7 @@ assert ai_digest.overview_layout({"layout": "箇条書きだけ"}) == "箇条書
 assert ai_digest.overview_layout({"group_by": "がん種"}).startswith("がん種ごとに **太字の見出し**")
 print("✅ summary_rule / tag_guide / layout")
 
-# ---------- 朝のニュースの米国株の欄（news.market） ----------
+# ---------- 朝のニュースの株式の欄（news.market） ----------
 import market  # noqa: E402
 
 
@@ -569,13 +569,25 @@ MCFG = {**LCFG, "market": {"quotes": [{"symbol": "^GSPC", "name": "S&P500"}, {"s
                                       {"symbol": "AAPL", "name": "アップル"}],
                            "skip_titles": ["株価・株式情報"], "sources": [{"name": "G", "url": "u"}]}}
 emb = market.build_embed(MCFG)
-assert emb["title"] == "📈 米国株（10/29 終値）", emb["title"]
+assert emb["title"] == "📈 株式（10/29 終値）", emb["title"]
 d = emb["description"]
 assert d.startswith("**S&P500 7,720.39（-0.30%）**") and "アルファベット -12.6%｜アップル +1.1%" in d, d
 assert "[Reuters](https://ex.com/a)" in d and "業績に影響しそうな発表" not in d   # 空の欄は出さない
 assert "株価・株式情報" not in MPROMPTS[0] and MPROMPTS[0].count("アルファベット決算に失望") == 1   # 除外・重複除去
 ai_digest.requests.post = lambda *a, **k: (_ for _ in ()).throw(ai_digest.requests.ConnectionError("down"))
 assert "解説はLLMが使えなかった" in market.build_embed(MCFG)["description"]   # LLMが落ちても株価は出す
+QS = [{"symbol": "^GSPC", "date": "10/29"}, {"symbol": "4661.T", "date": "10/30"}, {"symbol": "9202.T", "date": "10/30"}]
+assert market.close_dates(QS) == "米国 10/29・日本 10/30" and market.close_dates(QS[1:]) == "10/30"   # 日米で取引日が違う
+assert market.short_names({"name": "ANAホールディングス", "aliases": ["全日空"]}) == ["ANAホールディングス", "ANA", "全日空"]
+market.fetch_rss = lambda src, since: [{"title": f"{src['name']}{i}", "link": "u"} for i in range(5)]
+heads = market.collect_headlines({"sources": [{"name": "米"}, {"name": "日"}], "max_headlines": 4})
+assert [h["title"] for h in heads] == ["米0", "日0", "米1", "日1"]   # 後ろの情報源も上限で切られない
+ai_digest.requests.post = lambda url, headers=None, json=None, timeout=None: FakeChat(market.json.dumps(
+    {"sp500": "", "movers": [], "releases": [{"text": "インテルが見通しを発表"}, {"text": "グーグルが新型AIを発表", "refs": []}]},
+    ensure_ascii=False))
+MCFG["market"]["quotes"][1]["aliases"] = ["グーグル"]
+d = market.build_embed(MCFG)["description"]
+assert "グーグルが新型AI" in d and "インテル" not in d   # 対象外の企業の発表は載せない
 print("✅ market")
 
 # ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------

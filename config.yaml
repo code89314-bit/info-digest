@@ -251,11 +251,12 @@ news:
   # LLMが使えないときの絞り込みキーワード
   fallback_keywords: [政府, 閣議, 法案, 物価, 金利, 日銀, 為替, 株価, 医療, 薬, 診療報酬, 年金, 税, 補助, 選挙, 首相, 大統領]
 
-  # ---- 米国株の欄（src/market.py）。「今日の動向まとめ」の次に1つ付きます（問い合わせが1回増える） ----
+  # ---- 株式の欄（src/market.py）。「今日の動向まとめ」の次に1つ付きます（問い合わせが1回増える） ----
   # 株価（終値・前日比）は Yahoo Finance から取った正確な数字。原因・発表は下の sources の見出しを LLM が読んでまとめます
+  # 朝の時点で、米国株は前日（米国時間）、日本株は前営業日の終値。欄の見出しに市場ごとの日付が出ます
   market:
     enabled: true
-    audience: 米国のビッグテック株と S&P500 に投資している個人
+    audience: S&P500・米国のビッグテック株と、日本の個別株に投資している個人
     # 値動きの原因を書く銘柄の最大数／業績に影響しそうな発表の最大数
     max_movers: 5
     max_releases: 4
@@ -263,33 +264,36 @@ news:
     # LLMに見せる見出しの最大数（多いと遅くなる）
     max_headlines: 80
     # 株価を取る銘柄。先頭は指数（S&P500）にする。symbol は Yahoo Finance の記号（finance.yahoo.com で検索すると分かる）
-    # 下はFANG+の代表的な銘柄。入れ替えは自由（例: CrowdStrike は CRWD、ServiceNow は NOW）
+    # 日本株は「証券コード.T」（例: トヨタは 7203.T）。銘柄を変えたら、下の sources の検索語も合わせる
     quotes:
       - {symbol: "^GSPC", name: S&P500}
       - {symbol: NVDA, name: エヌビディア}
-      - {symbol: GOOGL, name: アルファベット}
-      - {symbol: AAPL, name: アップル}
-      - {symbol: MSFT, name: マイクロソフト}
-      - {symbol: AMZN, name: アマゾン}
+      # aliases: 記事での別の呼び方（「業績に影響しそうな発表」は、名前か別名を含むものだけ載せる）
+      - {symbol: GOOGL, name: アルファベット, aliases: [グーグル, Google]}
       - {symbol: META, name: メタ}
-      - {symbol: TSLA, name: テスラ}
-      - {symbol: NFLX, name: ネットフリックス}
-      - {symbol: AVGO, name: ブロードコム}
+      - {symbol: 4661.T, name: オリエンタルランド}
+      - {symbol: 4755.T, name: 楽天グループ}
+      - {symbol: 7867.T, name: タカラトミー}
+      - {symbol: 9202.T, name: ANAホールディングス, aliases: [全日空]}
     # 見出しにこの言葉を含むものは使わない（株価ページ・投資信託のページなど、ニュースでないもの）
     skip_titles: ["株価・株式情報", "基準価格", "Stocks to Buy", "買うべき"]
     # 見出しを集める先（Googleニュースの検索RSS。when:1d = 直近1日。検索語は q= の後ろ）
     sources:
       - name: "Googleニュース: 米国株の市況"
         url: https://news.google.com/rss/search?q=%E7%B1%B3%E5%9B%BD%E6%A0%AA%20OR%20NY%E3%83%80%E3%82%A6%20OR%20S%26P500%20OR%20%E3%83%8A%E3%82%B9%E3%83%80%E3%83%83%E3%82%AF%20%E5%B8%82%E6%B3%81%20OR%20%E7%B5%82%E5%80%A4%20OR%20%E6%A6%82%E6%B3%81%20when%3A1d&hl=ja&gl=JP&ceid=JP:ja
-      - name: "Googleニュース: ビッグテック株"
-        url: https://news.google.com/rss/search?q=%E3%82%A8%E3%83%8C%E3%83%93%E3%83%87%E3%82%A3%E3%82%A2%20OR%20%E3%82%A2%E3%83%AB%E3%83%95%E3%82%A1%E3%83%99%E3%83%83%E3%83%88%20OR%20%E3%82%B0%E3%83%BC%E3%82%B0%E3%83%AB%20OR%20%E3%82%A2%E3%83%83%E3%83%97%E3%83%AB%20OR%20%E3%83%9E%E3%82%A4%E3%82%AF%E3%83%AD%E3%82%BD%E3%83%95%E3%83%88%20OR%20%E3%82%A2%E3%83%9E%E3%82%BE%E3%83%B3%20OR%20%E3%83%A1%E3%82%BF%20OR%20%E3%83%86%E3%82%B9%E3%83%A9%20OR%20%E3%83%8D%E3%83%83%E3%83%88%E3%83%95%E3%83%AA%E3%83%83%E3%82%AF%E3%82%B9%20OR%20%E3%83%96%E3%83%AD%E3%83%BC%E3%83%89%E3%82%B3%E3%83%A0%20%E6%A0%AA%E4%BE%A1%20OR%20%E6%B1%BA%E7%AE%97%20when%3A1d&hl=ja&gl=JP&ceid=JP:ja
+      # 検索語: エヌビディア OR アルファベット OR グーグル OR メタ 株価 OR 決算
+      - name: "Googleニュース: 米国の銘柄"
+        url: https://news.google.com/rss/search?q=%E3%82%A8%E3%83%8C%E3%83%93%E3%83%87%E3%82%A3%E3%82%A2%20OR%20%E3%82%A2%E3%83%AB%E3%83%95%E3%82%A1%E3%83%99%E3%83%83%E3%83%88%20OR%20%E3%82%B0%E3%83%BC%E3%82%B0%E3%83%AB%20OR%20%E3%83%A1%E3%82%BF%20%E6%A0%AA%E4%BE%A1%20OR%20%E6%B1%BA%E7%AE%97%20when%3A1d&hl=ja&gl=JP&ceid=JP:ja
+      # 検索語: オリエンタルランド OR 楽天グループ OR タカラトミー OR ANAホールディングス OR 全日空（株価に限らず発表も拾う）
+      - name: "Googleニュース: 日本の銘柄"
+        url: https://news.google.com/rss/search?q=%E3%82%AA%E3%83%AA%E3%82%A8%E3%83%B3%E3%82%BF%E3%83%AB%E3%83%A9%E3%83%B3%E3%83%89%20OR%20%E6%A5%BD%E5%A4%A9%E3%82%B0%E3%83%AB%E3%83%BC%E3%83%97%20OR%20%E3%82%BF%E3%82%AB%E3%83%A9%E3%83%88%E3%83%9F%E3%83%BC%20OR%20ANA%E3%83%9B%E3%83%BC%E3%83%AB%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E3%82%B9%20OR%20%E5%85%A8%E6%97%A5%E7%A9%BA%20when%3A1d&hl=ja&gl=JP&ceid=JP:ja
       - name: "Google News: US market wrap"
         url: https://news.google.com/rss/search?q=%22stock%20market%20today%22%20OR%20%22S%26P%20500%22%20OR%20%22Wall%20Street%22%20stocks%20close%20when%3A1d&hl=en-US&gl=US&ceid=US:en
-      - name: "Google News: big tech stocks"
-        url: https://news.google.com/rss/search?q=Nvidia%20OR%20Alphabet%20OR%20Apple%20OR%20Microsoft%20OR%20Amazon%20OR%20Meta%20OR%20Tesla%20OR%20Netflix%20OR%20Broadcom%20shares%20OR%20stock%20when%3A1d&hl=en-US&gl=US&ceid=US:en
+      - name: "Google News: US stocks"
+        url: https://news.google.com/rss/search?q=Nvidia%20OR%20Alphabet%20OR%20Meta%20shares%20OR%20stock%20when%3A1d&hl=en-US&gl=US&ceid=US:en
       # 企業の発表（新製品・提携・買収・業績見通し）
-      - name: "Google News: big tech announcements"
-        url: https://news.google.com/rss/search?q=Nvidia%20OR%20Alphabet%20OR%20Google%20OR%20Apple%20OR%20Microsoft%20OR%20Amazon%20OR%20Meta%20OR%20Tesla%20OR%20Netflix%20OR%20Broadcom%20announces%20OR%20unveils%20OR%20deal%20OR%20acquisition%20OR%20guidance%20when%3A1d&hl=en-US&gl=US&ceid=US:en
+      - name: "Google News: US announcements"
+        url: https://news.google.com/rss/search?q=Nvidia%20OR%20Alphabet%20OR%20Google%20OR%20Meta%20announces%20OR%20unveils%20OR%20deal%20OR%20acquisition%20OR%20guidance%20when%3A1d&hl=en-US&gl=US&ceid=US:en
 
   # 情報源（NHK は広告がなく、RSSに要約が付いているので主力。見出しだけのRSSは要約の材料が無いので入れていません）
   sources:
