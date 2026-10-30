@@ -429,7 +429,7 @@ print("✅ llm dedupe")
 
 # ---------- Discord: 1メッセージの embed 合計6000字・10個までに分ける ----------
 SENT_PAYLOADS = []
-common._send = lambda url, p: SENT_PAYLOADS.append(p)
+common._send = lambda url, p, wait=False: SENT_PAYLOADS.append(p)
 os.environ.pop("DRY_RUN")
 os.environ["DISCORD_TEST"] = "https://example.invalid/hook"
 big = [{"title": f"t{n}", "description": "あ" * 2500} for n in range(5)] + [{"title": "s", "description": "x"}] * 12
@@ -553,6 +553,53 @@ print("✅ learn")
 assert ai_digest.ja_fix("转移性胰腺癌の随访と监测、推奨等级、患者分层") == "転移性膵癌のフォローアップとモニタリング、推奨等級、患者層別化"
 assert ai_digest.ja_fix("据え置き・複数の薬剤") == "据え置き・複数の薬剤"   # 日本語の字はそのまま
 print("✅ ja_fix")
+
+# ---------- 欄ごとの投稿と画像（news.split_posts / images） ----------
+import embed_images  # noqa: E402
+assert embed_images.emoji_image("🏛️ 政治・制度").endswith("/1f3db.png")      # FE0F は付けない
+assert embed_images.emoji_image("📍 横浜線沿線｜⏰ もうすぐ").endswith("/23f0.png")   # 分類の絵文字を優先
+assert embed_images.emoji_image("見出しだけ") is None
+SEC = [{"title": "📋 今日の動向まとめ", "description": "まとめ"},
+       {"title": "📈 株式", "description": "[a](https://news.google.com/rss/articles/x)"},
+       {"title": "🌏 国際（1）", "description": "**[記事](https://news.web.nhk/a)**"},
+       {"title": "🌏 国際（2）", "description": "**[記事](https://news.web.nhk/b)**"},
+       {"title": "🏙️ 社会", "description": "**[記事](https://news.web.nhk/c)**"}]
+assert [len(g) for g in ai_digest.group_sections(SEC)] == [1, 1, 2, 1]
+OGS = []
+orig_og = embed_images.og_image
+embed_images.og_image = lambda u, timeout=15: OGS.append(u) or ("https://img/a.jpg" if u.endswith("/a") else None)
+SENT_SEC = []
+orig_post = ai_digest.post_discord
+ai_digest.post_discord = lambda w, **k: SENT_SEC.append(k)
+os.environ.pop("DRY_RUN", None)
+ai_digest.post_sections("W", "朝のニュース", {"images": "thumbnail"}, "📰 見出し", [dict(e) for e in SEC])
+assert SENT_SEC[0]["content"] == "📰 見出し" and len(SENT_SEC) == 5          # 見出し＋4つの欄
+assert "news.google.com/rss/articles/x" not in "".join(OGS)                  # Google ニュースは読まない
+assert SENT_SEC[1]["embeds"][0]["thumbnail"]["url"].endswith("/1f4cb.png")   # 記事の無い欄は絵文字
+assert SENT_SEC[2]["embeds"][0]["thumbnail"]["url"].endswith("/1f4c8.png")
+assert SENT_SEC[3]["embeds"][0]["thumbnail"]["url"] == "https://img/a.jpg"    # 最初の記事の写真
+assert "thumbnail" not in SENT_SEC[3]["embeds"][1]                            # 続きの欄には付けない
+assert SENT_SEC[4]["embeds"][0]["thumbnail"]["url"].endswith("/1f3d9.png")   # 写真が無ければ絵文字
+embed_images.og_image, ai_digest.post_discord = orig_og, orig_post
+os.environ["DRY_RUN"] = "1"
+print("✅ split posts / images")
+
+# ---------- 古い投稿を消す（news.keep_days） ----------
+import datetime as _dt  # noqa: E402
+DELETED = []
+orig_del = ai_digest.delete_discord
+ai_digest.delete_discord = lambda w, mid: DELETED.append(mid) or mid != "fail"
+st_del = {"posted": [{"id": "old", "date": "2026-10-23"}, {"id": "fail", "date": "2026-10-20"},
+                     {"id": "keep", "date": "2026-10-24"}]}
+ai_digest.delete_old_posts("W", st_del, 7, ["new1", "new2"], today=_dt.date(2026, 10, 31))
+assert sorted(DELETED) == ["fail", "old"]                                    # 8日以上前だけ消す
+assert [p["id"] for p in st_del["posted"]] == ["fail", "keep", "new1", "new2"]   # 消せなかったものは次回また
+ai_digest.delete_discord = orig_del
+import common  # noqa: E402
+assert common._webhook_url("https://d/api/webhooks/1/t", query="wait=true") == "https://d/api/webhooks/1/t?wait=true"
+assert common._webhook_url("https://d/api/webhooks/1/t?thread_id=5", "/messages/9") == \
+    "https://d/api/webhooks/1/t/messages/9?thread_id=5"
+print("✅ delete old posts")
 
 # ---------- 区画ごとの要約・分類・動向まとめの書き方（summary_rule / tag_guide / overview.layout） ----------
 one = [{"source": "s", "title": "t", "summary": "x"}]
