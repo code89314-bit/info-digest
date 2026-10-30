@@ -1,9 +1,10 @@
-"""朝のニュースに「米国株」の欄を添える（config.yaml の news.market）。
+"""朝のニュースに「株式」の欄を添える（config.yaml の news.market。米国株・日本株）。
 
 - 株価: Yahoo Finance のチャートAPI から、前営業日の終値と前日比（数字はLLMに作らせない）
 - 原因・発表: Googleニュースなどの見出しを LLM に読ませ、S&P500の解釈・主な銘柄の値動きの原因・
   業績に影響しそうな発表をまとめさせる。根拠にした記事へのリンクを付ける
 """
+import itertools
 import json
 import re
 import time
@@ -41,7 +42,7 @@ def fetch_quotes(quotes: list[dict]) -> list[dict]:
 def collect_headlines(mk: dict) -> list[dict]:
     since = time.time() - mk.get("lookback_hours", 24) * 3600
     skip = mk.get("skip_titles") or []
-    out, titles = [], set()
+    lists, titles = [], set()
     for src in (mk.get("sources") or []):
         try:
             got = fetch_rss(src, since)
@@ -49,17 +50,22 @@ def collect_headlines(mk: dict) -> list[dict]:
             print(f"⚠ {src['name']} 取得失敗: {ex}")
             continue
         print(f"{src['name']}: {len(got)} 件")
+        kept = []
         for it in got:
             key = re.sub(r"\s+", "", it["title"])
             if key in titles or any(s in it["title"] for s in skip):
                 continue
             titles.add(key)
-            out.append(it)
+            kept.append(it)
+        lists.append(kept)
+    # 情報源から1件ずつ順に取る（先頭から詰めると、後ろの情報源＝日本株の見出しが上限で切れた 2026-10-30）
+    out = [it for row in itertools.zip_longest(*lists) for it in row if it]
     return out[: int(mk.get("max_headlines", 80))]
 
 
-PROMPT = """あなたは米国株の市況を伝える記者です。読者: {audience}
-【株価】（前営業日の終値と前日比。正確な数字）と【記事の見出し】だけを根拠に、日本語で書いてください。
+PROMPT = """あなたは株式の市況を伝える記者です。読者: {audience}
+【株価】（前営業日の終値と前日比。正確な数字。米国株と日本株は取引日が違うので［］の日付を見る）と
+【記事の見出し】だけを根拠に、日本語で書いてください。
 
 JSONのみを出力:
 {{"sp500": "S&P500の値動きと、記事が伝える主な要因・市場の受け止め（2〜3文）", "sp500_refs": [見出し番号],
@@ -86,6 +92,26 @@ def fmt_quote(q: dict) -> str:
     return f"{q['name']} {q['close']:,.2f}（{q['change']:+.2f}%）"
 
 
+def market_of(q: dict) -> str:
+    """Yahoo の記号の末尾 .T は東証。それ以外は米国として扱う。"""
+    return "日本" if q["symbol"].upper().endswith(".T") else "米国"
+
+
+def short_names(q: dict) -> list[str]:
+    """銘柄の呼び方（「楽天グループ」→「楽天」も。aliases があればそれも）。"""
+    name = q["name"]
+    short = re.sub(r"(グループ|ホールディングス)$", "", name)
+    return list(dict.fromkeys([name, short, *(q.get("aliases") or [])]))
+
+
+def close_dates(quotes: list[dict]) -> str:
+    """見出しの日付。市場が1つなら「10/29」、日米が混ざれば「米国 10/29・日本 10/30」。"""
+    by = {}
+    for q in quotes:
+        by.setdefault(market_of(q), q["date"])
+    return "・".join(f"{m} {d}" for m, d in by.items()) if len(by) > 1 else quotes[0]["date"]
+
+
 def parse_json(text: str) -> dict | None:
     m = re.search(r"\{.*\}", strip_think(text), flags=re.S)
     if not m:
@@ -104,7 +130,7 @@ def write_report(quotes: list[dict], heads: list[dict], mk: dict, cfg: dict) -> 
         return None
     prompt = PROMPT.format(audience=mk.get("audience") or "個人投資家", max_movers=mk.get("max_movers", 5),
                            max_releases=mk.get("max_releases", 4),
-                           quotes="\n".join(f"- {fmt_quote(q)}" for q in quotes),
+                           quotes="\n".join(f"- {fmt_quote(q)}［{market_of(q)} {q['date']} 終値］" for q in quotes),
                            headlines="\n".join(f"[{i}] {h['title']}" for i, h in enumerate(heads)) or "（なし）")
     for attempt in range(2):
         try:
@@ -137,7 +163,7 @@ def build_embed(cfg: dict) -> dict | None:
     if not quotes:
         return None
     heads = collect_headlines(mk)
-    print(f"米国株: 株価 {len(quotes)} 銘柄、見出し {len(heads)} 件")
+    print(f"株式: 株価 {len(quotes)} 銘柄、見出し {len(heads)} 件")
     rep = write_report(quotes, heads, mk, cfg) or {}
     index, stocks = quotes[0], quotes[1:]   # quotes の先頭は指数（S&P500）
     body = f"**{fmt_quote(index)}**\n"
@@ -150,7 +176,9 @@ def build_embed(cfg: dict) -> dict | None:
     if movers:
         body += "\n**主な銘柄の値動きと原因**\n" + "".join(
             f"• **{m.get('name', '')}**：{ja_fix(str(m['text']))}{links(m.get('refs'), heads)}\n" for m in movers)
-    rels = [r for r in (rep.get("releases") or []) if isinstance(r, dict) and r.get("text")]
+    # 発表は【株価】の銘柄の企業のものだけ（LLM がインテル・アマゾンなど対象外の企業の発表を入れた 2026-10-30）
+    rels = [r for r in (rep.get("releases") or []) if isinstance(r, dict) and r.get("text")
+            and any(n in str(r["text"]) for q in stocks for n in short_names(q))]
     if rels:
         body += "\n**業績に影響しそうな発表**\n" + "".join(
             f"• {ja_fix(str(r['text']))}{links(r.get('refs'), heads)}\n" for r in rels)
@@ -163,4 +191,4 @@ def build_embed(cfg: dict) -> dict | None:
         if len(desc) + len(line) + 1 > 3000:
             break
         desc += line + "\n"
-    return {"title": f"📈 米国株（{index['date']} 終値）", "description": desc.strip(), "color": 0x1E88E5}
+    return {"title": f"📈 株式（{close_dates(quotes)} 終値）", "description": desc.strip(), "color": 0x1E88E5}
