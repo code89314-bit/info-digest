@@ -5,6 +5,7 @@
       → Bot はその一言を先に投稿してから、スキルを実行して結果を投稿する。
   検索（web_search）: 自宅の SearXNG で検索し、上位ページの本文を読んで答える（research）→ 出典を添える。
                       検索語は外部の検索エンジンに送られるので、患者・職員を特定しうる語は入れさせない。
+                      ペルソナの research_with: notebooklm なら、NotebookLM に調べさせて答えをそのまま出す（research_nlm）。
   小説（novel）:      指定のシチュエーションで短編を書く（write_novel）。.local/novels/ にも保存。
 嗜好の記憶（ペルソナの memory: true）: 会話のたびに、相手の好み・小説の設定などを Strata に抜き出させて
   .local/state/strata_memory_<id>.json に貯め、次の会話・小説で system に入れる（モデル自体は学習しない）。
@@ -26,7 +27,7 @@ import yaml
 
 import ai_digest
 from ai_digest import LLMError, llm_settings, ja_fix, strip_think
-from common import ROOT, load_state, save_state
+from common import ROOT, load_config, load_state, save_state
 
 SECTION = "strata_chat"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -39,6 +40,7 @@ SKILLS = {
   あいさつ・雑談・気持ちの話・会話の中だけで答えられることでは使わない。
 - 使い方: キャラクターの口調で「調べてみる」ことを短く一言伝えてから（答えはまだ書かない）、
   最後の行に [[検索: 検索語1 | 検索語2]] とだけ書いて終える。検索語は1〜2個、検索エンジン向けの短い語の並び。
+- 薬は相手が書いた名前（商品名）のまま検索語に入れる。一般名・成分名に言い換えない（知っているつもりでも取り違えることがある）。
 - 検索語は外部の検索エンジンに送られる。患者・職員の氏名・ID・生年月日・住所・病院名・具体的な日付など、
   人を特定しうる語は絶対に入れない（例「山田さん 80歳 ワルファリン」→「高齢者 ワルファリン 用量」）。
 """},
@@ -66,6 +68,7 @@ SKILLS = {
 - 描画モードのあいだ（数十分）はおしゃべりできないことを、一言で伝えておく。
 """},
 }
+BARE_TAG = re.compile(r"\[\[\s*([^\[\]:：]+?)\s*\]\]\s*$")   # 名前の無い [[…]]（最後の行）
 SKILL_TAG = re.compile(r"\[\[\s*(" + "|".join(s["tag"] for s in SKILLS.values()) + r")\s*[:：]\s*(.+?)\]\]", re.S)
 TAG_TO_SKILL = {s["tag"]: sid for sid, s in SKILLS.items()}
 
@@ -80,6 +83,8 @@ RESEARCH_RULES = """
 - 下の「検索結果」は、直前の発言について、いまウェブで調べた内容。これをもとに、キャラクターの口調のまま答える。
 - 事実・数値・用量は検索結果に書いてあることを優先し、どの資料かが分かるように言う（「PMDA の添付文書だと〜」）。
 - 検索結果に無いことを、調べたかのように言わない。分からなければ分からないと言う。
+- 薬の成分名・一般名・分類は、検索結果に書いてあるときだけ書く。相手が商品名で言った薬を、自分の記憶で別の成分名に言い換えない。
+  検索結果が相手の言った薬とは別の薬の資料なら、そう伝えて、その資料の内容を答えにしない。
 - もう「調べてみる」とは言わない。[[検索: …]] も書かない。出典の一覧はこちらで付けるので URL は並べない。
 - 長くても 600 字程度。必要なら短い箇条書き。
 """
@@ -292,6 +297,12 @@ def reply(history: list[dict], cfg: dict) -> dict:
     text = _talk(system, history, cfg, persona)
     m = SKILL_TAG.search(text)
     sid = TAG_TO_SKILL.get(m.group(1)) if m else None
+    if not m and "web_search" in skills:
+        # Qwen3.6 は「検索:」を落として [[語1 | 語2]] だけ書くことがある（2026-10-30。「調べてみます」で止まった）
+        bare = BARE_TAG.search(text)
+        if bare:
+            return {"text": BARE_TAG.sub("", text).strip() or "ちょっと待ってて", "skill": "web_search",
+                    "arg": bare.group(1).strip()}
     if not m or sid not in skills:
         return {"text": SKILL_TAG.sub("", text).strip() or "（うまく返事を作れませんでした。もう一度送ってください）",
                 "skill": None, "arg": ""}
@@ -299,8 +310,29 @@ def reply(history: list[dict], cfg: dict) -> dict:
     return {"text": ack, "skill": sid, "arg": m.group(2).strip()}
 
 
-def search_queries(arg: str) -> list[str]:
-    return [q.strip() for q in re.split(r"[|｜]", arg) if q.strip()][:2]
+# 薬の名前ではない、よく出るカタカナ語（kana_names で拾わない）
+KANA_COMMON = {"ガイドライン", "インタビューフォーム", "エビデンス", "リスク", "データ", "メリット", "デメリット", "ケース",
+               "ポイント", "レジメン", "スケジュール", "コメント", "チェック", "アドバイス", "サイト", "ニュース", "メーカー",
+               "ジェネリック", "アレルギー", "クリアランス", "コントロール", "モニタリング", "ラベル", "マニュアル"}
+
+
+def kana_names(text: str, n: int = 3) -> list[str]:
+    """文中のカタカナ語（3字以上。薬の商品名など）を最大 n 個。よく出る一般語は除く。"""
+    words = [w for w in re.findall(r"[ァ-ヴー]{3,}", text or "") if w not in KANA_COMMON]
+    return list(dict.fromkeys(words))[:n]
+
+
+def search_queries(arg: str, user_text: str = "") -> list[str]:
+    """[[検索: …]] の中身を検索語に分ける。user_text（相手の発言）のカタカナ語（薬の商品名など）が
+    どの検索語にも無ければ、それを使った検索語を先頭に足す。
+    Qwen3.6 が「ソルデム」「ハンプ」を別の薬の一般名に言い換えて検索し、別の薬の資料で答えた（2026-10-30）。"""
+    queries = [q.strip() for q in re.split(r"[|｜]", arg) if q.strip()][:2]
+    names = kana_names(user_text)
+    if names and not any(n in q for n in names for q in queries):
+        # 足す検索語には、相手の発言にもある語（「配合変化」など）だけを添える（言い換えた薬名は入れない）
+        rest = [w for w in (queries[0].split() if queries else []) if w in user_text and w not in names]
+        queries = [" ".join(names + rest[:2])] + queries[:1]
+    return queries
 
 
 def research(history: list[dict], queries: list[str], cfg: dict) -> dict:
@@ -313,6 +345,76 @@ def research(history: list[dict], queries: list[str], cfg: dict) -> dict:
     text = SKILL_TAG.sub("", _talk(system, history, cfg, persona)).strip() or "（うまく答えを作れませんでした。もう一度送ってください）"
     used = [h for h in hits if h.get("text")] + [h for h in hits if not h.get("text")]
     return {"text": text, "sources": [(h["title"] or urlparse(h["url"]).netloc, h["url"]) for h in used[:5]]}
+
+
+# ---- NotebookLM で調べる（ペルソナの research_with: notebooklm） ----
+# ローカルのモデルは薬の名前を取り違える（商品名→一般名の30問で Qwen3.6 は8問正解、2026-10-30）。
+# 調べものは NotebookLM にウェブ調査と回答をさせ、その答えを書き直さずに出す。
+NLM_RESEARCH = """{question}
+（日本の添付文書・インタビューフォーム・ガイドライン・論文・行政資料などの一次資料を優先{names}）"""
+
+NLM_ASK = """次の質問に、このノートの資料に書いてあることだけで答えてください。
+
+質問: {question}
+{context}
+- 日本語の、です・ます調。結論を先に、理由をあとに（「結論から申し上げますと」などの前置きは書かない）。
+  長くても{max_chars}字程度。見出しは使わず、必要なら短い箇条書き。最後に質問を返さない。
+- 薬は質問に書かれた名前（商品名）のまま扱う。一般名・成分名は、資料で確かめられたときだけ「一般名（商品名）」と書く。
+- 資料に書いていないことは書かない。資料で確かめられなかった点は「資料では確認できませんでした」と書く。
+- 資料が質問の薬とは別の薬についてのものなら、そう書いて、その内容を答えにしない。
+- どの資料の記載かが分かるように書く（「PMDA の添付文書では」「〇〇学会のガイドラインでは」など）。
+- 個別の患者への判断（この人にこの量で良いか等）はせず、添付文書・ガイドラインの記載までにとどめる。"""
+
+
+class PrivacyBlocked(Exception):
+    """患者・職員を特定しうる情報がありそうなので、外部（NotebookLM）に送らなかった。"""
+
+    def __init__(self, privacy: dict):
+        super().__init__("privacy")
+        self.privacy = privacy
+
+
+def nlm_question(history: list[dict], user_text: str) -> tuple[str, str]:
+    """(質問, 会話の流れ)。直前の数発言を、「それの用量は？」のような短い質問の手がかりとして添える。"""
+    hist = list(history)
+    if hist and hist[-1]["role"] == "assistant":   # 「調べてみます」の一言
+        hist.pop()
+    if hist and hist[-1]["role"] == "user":        # いまの質問
+        hist.pop()
+    prev = [f"{'相手' if h['role'] == 'user' else 'アシスタント'}: {text_of(h['content'])[:200]}"
+            for h in hist[-4:] if text_of(h["content"]).strip()]
+    return user_text.strip(), ("（会話の流れ。質問の意味を取るためだけに使う）\n" + "\n".join(prev)) if prev else ""
+
+
+def research_nlm(history: list[dict], user_text: str, cfg: dict, nb_factory=None) -> dict:
+    """NotebookLM のウェブ調査で資料を集めて答えさせる。返り値: {"text", "sources": [(title, url), ...]}。
+    先に Strata で患者情報が無いかを確かめ、疑わしければ PrivacyBlocked（何も送らない）。"""
+    import qa_deep   # qa_deep → note_weekly … を読み込むので、使うときだけ
+    ncfg = cfg.get("notebooklm") or {}
+    question, context = nlm_question(history, user_text)
+    privacy = qa_deep.privacy_check(question + "\n" + context, cfg)
+    if not privacy["ok"]:
+        raise PrivacyBlocked(privacy)
+    if nb_factory is None:
+        import podcast_nlm
+        base = (load_config().get("onco") or {}).get("podcast") or {}   # CLI の場所・認証の設定は音声と共通
+        pod = {**base, "title": "しらべ", **(ncfg.get("notebook") or {})}
+        nb_factory = lambda: podcast_nlm.Notebook(pod, [])   # noqa: E731
+    nb = nb_factory()
+    try:
+        names = kana_names(question)
+        nb.research(NLM_RESEARCH.format(question=question,
+                                        names=f"。薬は「{'」「'.join(names)}」の名前のまま探す" if names else ""),
+                    mode=ncfg.get("research_mode", "fast"), fallback=" ".join(names) or question[:40])
+        text = nb.ask(NLM_ASK.format(question=question, context=context, max_chars=int(ncfg.get("max_chars", 800))))
+        srcs = [(s["title"] or urlparse(s["url"]).netloc, s["url"]) for s in nb.sources() if s.get("url")]
+    finally:
+        nb.close()
+    # NotebookLM は最後に「💡 〜も確認されますか？」と次の質問を勧めることがある（このノートはもう消している）
+    text = re.sub(r"\n+💡[^\n]*\s*$", "", text.strip())
+    if not text:
+        raise LLMError("NotebookLM から答えを得られませんでした")
+    return {"text": text.strip(), "sources": srcs[: int(ncfg.get("max_sources", 5))]}
 
 
 # ---- 小説 ----
@@ -1404,7 +1506,7 @@ if __name__ == "__main__":   # 試し: python src/strata_chat.py "発言"
     print("▶", r1["text"], "\nスキル:", r1["skill"], r1["arg"])
     hist.append({"role": "assistant", "content": r1["text"]})
     if r1["skill"] == "web_search":
-        r2 = research(hist, search_queries(r1["arg"]), cfg)
+        r2 = research(hist, search_queries(r1["arg"], hist[0]["content"]), cfg)
         print("▶", r2["text"])
         for t, u in r2["sources"]:
             print("-", t, u)
