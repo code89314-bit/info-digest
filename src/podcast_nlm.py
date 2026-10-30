@@ -261,9 +261,20 @@ class Notebook:
 
     def audio(self, out_path: Path) -> None:
         pod = self.pod
-        _cli(pod, ["generate", "audio", (pod.get("instructions") or "").strip(), "-n", self.nb,
-                   "--format", pod.get("format", "deep-dive"), "--length", pod.get("length", "default"),
-                   "--language", pod.get("language", "ja"), "--retry", "2", "--json"], timeout=600)
+        args = ["generate", "audio", (pod.get("instructions") or "").strip(), "-n", self.nb,
+                "--format", pod.get("format", "deep-dive"), "--length", pod.get("length", "default"),
+                "--language", pod.get("language", "ja"), "--retry", "2", "--json"]
+        # 台帳では枠が残っていても、Google が「作りすぎ」（RateLimitError）と断ることがある。間をおいて作り直す
+        waits = [int(m) for m in (pod.get("rate_limit_wait_minutes") or [])]
+        for i in range(len(waits) + 1):
+            try:
+                _cli(pod, args, timeout=600)
+                break
+            except PodcastError as ex:
+                if "RateLimit" not in str(ex) or i == len(waits):
+                    raise
+                print(f"NotebookLM が音声の作成を断りました（RateLimit）。{waits[i]}分後にやり直します")
+                time.sleep(waits[i] * 60)
         record_use(pod)   # Google が受け付けた時点で1件消費
         arts = (_cli(pod, ["artifact", "list", "-n", self.nb, "--json"]) or {}).get("artifacts", [])
         audio = [a for a in arts if "audio" in str(a.get("type", "")).lower()]
@@ -364,4 +375,9 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
             old.unlink(missing_ok=True)
     except Exception as ex:   # noqa: BLE001  音声は「おまけ」。失敗理由だけ伝える
         print("podcast 失敗:", ex)
-        post_discord(webhook, username=username, avatar_url=avatar_url, content=f"🎧 今日の podcast は作れませんでした: {str(ex)[:300]}")
+        why = str(ex)[:300]
+        if "RateLimit" in why:
+            waits = pod.get("rate_limit_wait_minutes") or []
+            why = ("NotebookLM が音声の作成を断りました（Google 側の回数制限）"
+                   + (f"。{'・'.join(f'{m}分' for m in waits)}待ってやり直しても駄目でした" if waits else ""))
+        post_discord(webhook, username=username, avatar_url=avatar_url, content=f"🎧 今日の podcast は作れませんでした: {why}")
