@@ -576,6 +576,15 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                     mk = None
                 if mk:
                     embeds.insert(1 if overview else 0, mk)
+            if (cfg.get("local") or {}).get("enabled"):   # news.local: 沿線の情報の欄（src/local_events.py）
+                import local_events
+                try:
+                    lo = local_events.build_embeds(cfg)
+                except Exception as ex:   # noqa: BLE001  沿線の欄が作れなくてもニュースは投稿する
+                    print("沿線の欄を作れませんでした:", ex)
+                    lo = []
+                at = sum(1 for e in embeds[:2] if e["title"].startswith(("📋", "📈")))   # まとめ・株式の次
+                embeds[at:at] = lo
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
