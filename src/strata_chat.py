@@ -39,6 +39,7 @@ SKILLS = {
   あいさつ・雑談・気持ちの話・会話の中だけで答えられることでは使わない。
 - 使い方: キャラクターの口調で「調べてみる」ことを短く一言伝えてから（答えはまだ書かない）、
   最後の行に [[検索: 検索語1 | 検索語2]] とだけ書いて終える。検索語は1〜2個、検索エンジン向けの短い語の並び。
+- 薬は相手が書いた名前（商品名）のまま検索語に入れる。一般名・成分名に言い換えない（知っているつもりでも取り違えることがある）。
 - 検索語は外部の検索エンジンに送られる。患者・職員の氏名・ID・生年月日・住所・病院名・具体的な日付など、
   人を特定しうる語は絶対に入れない（例「山田さん 80歳 ワルファリン」→「高齢者 ワルファリン 用量」）。
 """},
@@ -81,6 +82,8 @@ RESEARCH_RULES = """
 - 下の「検索結果」は、直前の発言について、いまウェブで調べた内容。これをもとに、キャラクターの口調のまま答える。
 - 事実・数値・用量は検索結果に書いてあることを優先し、どの資料かが分かるように言う（「PMDA の添付文書だと〜」）。
 - 検索結果に無いことを、調べたかのように言わない。分からなければ分からないと言う。
+- 薬の成分名・一般名・分類は、検索結果に書いてあるときだけ書く。相手が商品名で言った薬を、自分の記憶で別の成分名に言い換えない。
+  検索結果が相手の言った薬とは別の薬の資料なら、そう伝えて、その資料の内容を答えにしない。
 - もう「調べてみる」とは言わない。[[検索: …]] も書かない。出典の一覧はこちらで付けるので URL は並べない。
 - 長くても 600 字程度。必要なら短い箇条書き。
 """
@@ -306,8 +309,17 @@ def reply(history: list[dict], cfg: dict) -> dict:
     return {"text": ack, "skill": sid, "arg": m.group(2).strip()}
 
 
-def search_queries(arg: str) -> list[str]:
-    return [q.strip() for q in re.split(r"[|｜]", arg) if q.strip()][:2]
+def search_queries(arg: str, user_text: str = "") -> list[str]:
+    """[[検索: …]] の中身を検索語に分ける。user_text（相手の発言）のカタカナ語（薬の商品名など）が
+    どの検索語にも無ければ、それを使った検索語を先頭に足す。
+    Qwen3.6 が「ソルデム」「ハンプ」を別の薬の一般名に言い換えて検索し、別の薬の資料で答えた（2026-10-30）。"""
+    queries = [q.strip() for q in re.split(r"[|｜]", arg) if q.strip()][:2]
+    names = list(dict.fromkeys(re.findall(r"[ァ-ヴー]{3,}", user_text)))[:3]
+    if names and not any(n in q for n in names for q in queries):
+        # 足す検索語には、相手の発言にもある語（「配合変化」など）だけを添える（言い換えた薬名は入れない）
+        rest = [w for w in (queries[0].split() if queries else []) if w in user_text and w not in names]
+        queries = [" ".join(names + rest[:2])] + queries[:1]
+    return queries
 
 
 def research(history: list[dict], queries: list[str], cfg: dict) -> dict:
@@ -1411,7 +1423,7 @@ if __name__ == "__main__":   # 試し: python src/strata_chat.py "発言"
     print("▶", r1["text"], "\nスキル:", r1["skill"], r1["arg"])
     hist.append({"role": "assistant", "content": r1["text"]})
     if r1["skill"] == "web_search":
-        r2 = research(hist, search_queries(r1["arg"]), cfg)
+        r2 = research(hist, search_queries(r1["arg"], hist[0]["content"]), cfg)
         print("▶", r2["text"])
         for t, u in r2["sources"]:
             print("-", t, u)

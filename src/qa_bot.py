@@ -271,7 +271,7 @@ class QABot(discord.Client):
             await self.chat_send(msg, first["text"])
             history.append({"role": "assistant", "name": "アシスタント", "content": first["text"]})
             if first["skill"] == "web_search":
-                queries = strata_chat.search_queries(first["arg"])
+                queries = strata_chat.search_queries(first["arg"], msg.content)
                 async with msg.channel.typing():
                     res = await asyncio.to_thread(strata_chat.research, history, queries, ccfg)
                 text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(queries)
