@@ -374,6 +374,34 @@ assert "https://ex.com/x" in txt and "X approved" in txt and "新薬X" not in tx
 assert podcast_nlm.strip_citations("承認された [1]。適応は肺がん [2, 3]、[4-6]。") == "承認された。適応は肺がん、。"
 assert podcast_nlm._id({"notebook": {"id": "nb1"}}, "notebook", "id") == "nb1"
 assert podcast_nlm._id({"source_id": "s1"}, "source", "source_id", "id") == "s1"
+
+# Google が RateLimit で断ったら、待ってやり直す（待ち時間は config の rate_limit_wait_minutes）
+GEN, SLEPT = [], []
+def rl_cli(pod_, args, **k):
+    if args[0] == "generate":
+        GEN.append(1)
+        if len(GEN) < 3:
+            raise podcast_nlm.PodcastError("notebooklm generate 失敗（1）: RPC CREATE_ARTIFACT failed: RateLimitError")
+        return {}
+    if args[0] == "artifact" and args[1] == "list":
+        return {"artifacts": [{"id": "a1", "type": "audio"}]}
+    if args[0] == "download":
+        Path(args[2]).write_bytes(b"mp3")
+    return ""
+orig_cli, orig_sleep = podcast_nlm._cli, podcast_nlm.time.sleep
+podcast_nlm._cli, podcast_nlm.time.sleep = rl_cli, SLEPT.append
+nb = podcast_nlm.Notebook.__new__(podcast_nlm.Notebook)
+nb.pod, nb.nb = {"ledger": str(ledger), "rate_limit_wait_minutes": [30, 60]}, "nb1"
+nb.audio(TMP / "rl.mp3")
+assert len(GEN) == 3 and SLEPT == [1800, 3600] and podcast_nlm.used_today(pod) == 3   # 受け付けられた1回だけ数える
+GEN.clear(); SLEPT.clear()
+nb.pod = {"ledger": str(ledger), "rate_limit_wait_minutes": [30]}
+try:
+    nb.audio(TMP / "rl2.mp3")
+    raise AssertionError("諦めるはず")
+except podcast_nlm.PodcastError as ex:
+    assert "RateLimit" in str(ex) and len(GEN) == 2 and SLEPT == [1800]
+podcast_nlm._cli, podcast_nlm.time.sleep = orig_cli, orig_sleep
 print("✅ podcast parts")
 
 # ---------- 出典違いの同じ出来事を LLM でまとめる（llm.dedupe） ----------

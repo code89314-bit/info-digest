@@ -509,6 +509,8 @@ onco:
     # 音声の1日上限（適正使用ガイド用の onco_tekisei と同じ台帳で合算）
     ledger: 'E:\onco_tekisei\audio_usage.json'
     daily_limit: 3
+    # 枠が残っていても Google が「作りすぎ」と断ることがある。そのときは何分待ってやり直すか（空なら諦める）
+    rate_limit_wait_minutes: [30, 60]
 
   sources:
     # ---- 国内 ----
@@ -606,6 +608,7 @@ learn:
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     ledger: 'E:\onco_tekisei\audio_usage.json'
     daily_limit: 3
+    rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
 # ==== note 週刊マガジン「週刊がん薬物療法ニュース」の下書き ====
 # src/note_weekly.py が動かします（土曜の週間まとめの後に実行する想定）。
