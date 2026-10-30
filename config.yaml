@@ -320,9 +320,35 @@ news:
     max_items_per_batch: 15   # 1回の問い合わせで選ばせる最大数
     max_chars: 3800           # 欄の長さの上限（Discord の欄の上限は4096字。Googleニュースのリンクは1本250字ほど）
     skip_titles: ["求人", "アルバイト", "中古", "賃貸", "不動産"]
+    # 取りこぼしたくないサイト（毎朝直接読む。ここから拾ったものは件数の枠に関係なく 📌 付きで載せる）
+    #   type: rss    … 新しい記事をすべて選別に回す（Googleニュースの検索RSSも使える）
+    #   type: page   … ページの本文が前日から変わったときだけ、予定を抜き出す
+    #   type: titles … pattern（正規表現。( ) の中が名前）に合う名前の一覧を前日と比べ、増えたものを知らせる（初回は覚えるだけ）
+    watch:
+      - name: 相模原市立博物館
+        type: rss
+        url: https://sagamiharacitymuseum.jp/feed/
+      - name: 博物館プラネタリウムの投影スケジュール
+        type: page
+        url: https://sagamiharacitymuseum.jp/plane/schedule/
+      - name: JAXA 宇宙科学研究所のイベント
+        type: page
+        url: https://www.isas.jaxa.jp/outreach/events/
+      # 相模原住宅公園（中央区中央4-1）は公式ページにイベントの本文が無いので、ニュース検索で（検索語: 相模原住宅公園）
+      - name: 相模原住宅公園
+        type: rss
+        url: https://news.google.com/rss/search?q=%E7%9B%B8%E6%A8%A1%E5%8E%9F%E4%BD%8F%E5%AE%85%E5%85%AC%E5%9C%92%20when%3A30d&hl=ja&gl=JP&ceid=JP:ja
+      # 上映中・上映予定の作品の一覧（映画の時間・ジョルダン）。新しく加わった作品を知らせる
+      - name: MOVIX橋本
+        type: titles
+        title: 🎬 MOVIX橋本：新しく上映予定に加わった作品
+        url: https://movie.jorudan.co.jp/theater/1001743/
+        pattern: 'schedule/#cnm\d+" title="([^"]+)"'
     sources:
       - name: 号外NET 町田市
         url: https://machida.goguynet.jp/feed/
+      - name: 号外NET 相模原市中央区
+        url: https://sagamiharachuoku.goguynet.jp/feed/
       - name: "Googleニュース: 相模原 イベント"
         url: https://news.google.com/rss/search?q=%E7%9B%B8%E6%A8%A1%E5%8E%9F%20%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88%20when%3A7d&hl=ja&gl=JP&ceid=JP:ja
       - name: "Googleニュース: 町田 イベント"

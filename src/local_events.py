@@ -2,10 +2,12 @@
 
 - 集める: Googleニュースの検索RSS などの見出し（直近 lookback_days 日）
 - 選ぶ・読む: LLM が見出しから「申込・エントリーが要るもの」「イベント」「新しいお店」を選び、見出しにある日付・締切を抜き出す
+- 必ず見るサイト（watch）: 博物館・JAXA・映画館など、取りこぼしたくないサイトを毎朝直接読む（📌 付きで全部載せる）
 - 覚える: 見つけたものは .local/state（load_state）に残し、締切・開催日が近づいたら毎朝「⏰ もうすぐ」に出す（忘れないように）
 日付は見出しに書いてあるものだけ（LLM に作らせない）。
 """
 import datetime as dt
+import html
 import json
 import re
 import time
@@ -47,6 +49,110 @@ JSONのみ: {{"items": [{{"kind": "entry|event|opening", "name": "...", "place":
 
 【見出し】
 {headlines}"""
+
+
+PAGE_PROMPT = """次は「{name}」のウェブページの本文です。読者: {audience}
+このページから、今日（{today}）以降の予定を JSON にしてください。
+- entry: 申込・予約・抽選・応募が必要なもの（ページに申込・予約・抽選などと書いてあるものだけ）
+- event: イベント・公開・講演会・観望会・番組の投影期間など
+- opening: 新しく始まるお店・施設・番組
+過去の予定・ページの案内文（休館日の一覧・アクセスなど）は選ばない。日付はページに書いてあるものだけ（"MM-DD"）。最大{max_items}件。
+
+JSONのみ: {{"items": [{{"kind": "entry|event|opening", "name": "...", "place": "", "date": "", "date_end": "",
+"deadline": "", "entry_start": "", "note": "1文の補足（ページにあることだけ）"}}]}}
+
+本文:
+{text}"""
+
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"}
+
+
+def fetch_html(url: str) -> str:
+    import requests
+    r = requests.get(url, headers=UA, timeout=30)
+    r.raise_for_status()
+    r.encoding = r.apparent_encoding
+    return r.text
+
+
+def page_text(html: str) -> str:
+    from strata_chat import _Text
+    p = _Text()
+    p.feed(html)
+    return re.sub(r"\s+", " ", " ".join(p.out)).strip()
+
+
+def ask_items(prompt: str, cfg: dict) -> list[dict]:
+    """LLM に JSON の {"items": [...]} を書かせる（2回まで）。"""
+    llm = llm_settings(cfg)
+    chat = CHAT.get(llm["provider"])
+    if not chat:
+        return []
+    for attempt in range(2):
+        try:
+            text = strip_think(chat(prompt, llm))
+        except LLMError as ex:
+            print("沿線の欄を書けませんでした:", ex)
+            return []
+        m = re.search(r"\{.*\}", text, flags=re.S)
+        try:
+            data = json.loads(m.group(0)) if m else None
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            return [x for x in data.get("items") or [] if isinstance(x, dict) and x.get("kind") in KINDS and x.get("name")]
+        print(f"沿線の欄: LLMの出力を解釈できませんでした（{attempt + 1}回目）")
+    return []
+
+
+def watch(lc: dict, cfg: dict, state: dict, today: dt.date) -> tuple[list[dict], list[dict]]:
+    """必ず見るサイト（news.local.watch）。返り値: (新しく覚えたもの, 追加の欄)。
+    rss: 新しい記事をすべて選別に回す / page: 本文が変わったときだけ予定を抜き出す /
+    titles: pattern に合う名前（映画の作品名など）の一覧を前回と比べ、増えたものを知らせる（初回は覚えるだけ）"""
+    new, embeds = [], []
+    pages, lists = state.setdefault("pages", {}), state.setdefault("titles", {})
+    seen = set(state.get("seen") or [])
+    audience = lc.get("audience") or "沿線に住む社会人"
+    for w in lc.get("watch") or []:
+        kind = w.get("type", "page")
+        try:
+            if kind == "rss":
+                since = time.time() - float(lc.get("lookback_days", 7)) * 86400
+                heads = [{**h, "title": h["title"] + (f" — {h['summary'][:150]}" if h.get("summary") else ""),
+                          "source": w["name"], "key": title_key(h["title"])}
+                         for h in fetch_rss(w, since) if title_key(h["title"]) not in seen]
+                if heads:
+                    found = extract(heads, [r["name"] for r in state.get("items") or []] + [r["name"] for r in new],
+                                    {**lc, "extra": (lc.get("extra") or "") + f"\nこれは読者が登録した「{w['name']}」の記事。"
+                                     "地域の内外を問わず、entry・event・opening に当たるものはすべて選ぶ"}, cfg)
+                    new += remember(found, heads, state, today, must=True)
+                    state["seen"] = list(state.get("seen") or []) + [h["key"] for h in heads]
+            elif kind == "page":
+                text = page_text(fetch_html(w["url"]))[: int(w.get("max_chars", 6000))]
+                import hashlib
+                digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+                if pages.get(w["url"]) == digest:
+                    continue
+                found = ask_items(PAGE_PROMPT.format(name=w["name"], audience=audience, today=today.isoformat(),
+                                                     max_items=int(w.get("max_items", 10)), text=text), cfg)
+                head = {"title": w["name"], "link": w.get("link") or w["url"], "source": w["name"]}
+                new += remember([{**f, "ref": 0} for f in found], [head], state, today, must=True)
+                pages[w["url"]] = digest
+            elif kind == "titles":
+                names = list(dict.fromkeys(html.unescape(t).strip()
+                                           for t in re.findall(w["pattern"], fetch_html(w["url"])) if t.strip()))
+                prev = lists.get(w["url"])
+                lists[w["url"]] = names
+                added = [n for n in names if prev is not None and n not in prev]
+                if prev is None:
+                    print(f"{w['name']}: 初回なので今の {len(names)} 件を覚えるだけ")
+                elif added:
+                    embeds.append({"title": w.get("title") or f"🎬 {w['name']}：新しく加わったもの",
+                                   "description": "\n".join(f"• {n}" for n in added)[:3500]
+                                   + f"\n-# [{w['name']}]({w.get('link') or w['url']})", "color": 0xF06292})
+        except Exception as ex:   # noqa: BLE001  1つのサイトが読めなくても続ける
+            print(f"⚠ {w['name']} を読めませんでした: {str(ex)[:150]}")
+    return new, embeds
 
 
 def collect(lc: dict) -> list[dict]:
@@ -91,34 +197,17 @@ def fmt_day(d: dt.date | None) -> str:
 
 
 def extract(heads: list[dict], known: list[str], lc: dict, cfg: dict) -> list[dict]:
-    llm = llm_settings(cfg)
-    chat = CHAT.get(llm["provider"])
-    if not chat or not heads:
+    if not heads:
         return []
-    prompt = PROMPT.format(audience=lc.get("audience") or "沿線に住む社会人", area=lc.get("area") or "",
-                           extra=(lc.get("extra") or "").strip(), exclude=(lc.get("exclude") or "").strip(),
-                           known="\n".join(f"- {k}" for k in known[-80:]) or "（なし）",
-                           max_items=int(lc.get("max_items_per_batch", 10)),
-                           headlines="\n".join(f"[{i}] {h['title']}" for i, h in enumerate(heads)))
-    for attempt in range(2):
-        try:
-            text = strip_think(chat(prompt, llm))
-        except LLMError as ex:
-            print("沿線の欄を書けませんでした:", ex)
-            return []
-        m = re.search(r"\{.*\}", text, flags=re.S)
-        try:
-            data = json.loads(m.group(0)) if m else None
-        except json.JSONDecodeError:
-            data = None
-        if isinstance(data, dict):
-            return [x for x in data.get("items") or [] if isinstance(x, dict) and x.get("kind") in KINDS and x.get("name")]
-        print(f"沿線の欄: LLMの出力を解釈できませんでした（{attempt + 1}回目）")
-    return []
+    return ask_items(PROMPT.format(audience=lc.get("audience") or "沿線に住む社会人", area=lc.get("area") or "",
+                                   extra=(lc.get("extra") or "").strip(), exclude=(lc.get("exclude") or "").strip(),
+                                   known="\n".join(f"- {k}" for k in known[-80:]) or "（なし）",
+                                   max_items=int(lc.get("max_items_per_batch", 10)),
+                                   headlines="\n".join(f"[{i}] {h['title']}" for i, h in enumerate(heads))), cfg)
 
 
-def remember(found: list[dict], heads: list[dict], state: dict, today: dt.date) -> list[dict]:
-    """見つけたものを覚える。新しく覚えたものを返す。"""
+def remember(found: list[dict], heads: list[dict], state: dict, today: dt.date, must: bool = False) -> list[dict]:
+    """見つけたものを覚える。新しく覚えたものを返す。must: 必ず見るサイトから（件数の枠に関係なく載せる）。"""
     items = state.setdefault("items", [])
     new = []
     for f in found:
@@ -133,7 +222,7 @@ def remember(found: list[dict], heads: list[dict], state: dict, today: dt.date) 
         rec = {"kind": f["kind"], "name": ja_fix(str(f["name"]))[:40], "place": str(f.get("place") or "")[:30],
                "note": ja_fix(str(f.get("note") or ""))[:80], "link": h["link"],
                "site": h["title"].rsplit(" - ", 1)[-1] if " - " in h["title"] else h.get("source") or "記事",
-               "found": today.isoformat()}
+               "found": today.isoformat(), **({"must": True} if must else {})}
         for k in ("date", "date_end", "deadline", "entry_start"):
             d = to_date(str(f.get(k) or ""), today)
             rec[k] = d.isoformat() if d else ""
@@ -192,7 +281,8 @@ def line(rec: dict) -> str:
     place = f"＠{rec['place']}" if rec.get("place") else ""
     note = f"（{rec['note']}）" if rec.get("note") else ""
     site = rec["site"].replace("[", "［").replace("]", "］")
-    return f"• {when}**{rec['name']}**{place}{note} [{site}]({rec['link']})"
+    pin = "📌" if rec.get("must") else ""   # 必ず見るサイトから
+    return f"• {pin}{when}**{rec['name']}**{place}{note} [{site}]({rec['link']})"
 
 
 def soon(items: list[dict], today: dt.date, days: int) -> list[tuple[dt.date, str, dict]]:
@@ -212,6 +302,7 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
     lc = cfg.get("local") or {}
     today = today or dt.date.today()
     state = load_state(STATE)
+    must, extra_embeds = watch(lc, cfg, state, today)   # 必ず見るサイトを先に（ニュースの同じ話題は重複として省かれる）
     heads = [h for h in collect(lc) if title_key(h["title"]) not in set(state.get("seen") or [])]
     known = [i["name"] for i in state.get("items") or []]
     # 見出しは batch 件ずつ読ませる（226件を一度に渡すと、先頭の情報源の見出しからしか選ばなかった 2026-10-30）
@@ -220,9 +311,11 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
     for i in range(0, len(heads), size):
         part = heads[i:i + size]
         new += remember(extract(part, known + [r["name"] for r in new], lc, cfg), part, state, today)
-    # 載せるのは分類ごとに max_per_kind 件まで。あふれたものも覚えておき、日付が近づいたら「⏰ もうすぐ」に出る
+    # 載せるのは分類ごとに max_per_kind 件まで（必ず見るサイトのものは全部、先頭に）。
+    # あふれたものも覚えておき、日付が近づいたら「⏰ もうすぐ」に出る
     caps = {"entry": 10, "event": 10, "opening": 8, **(lc.get("max_per_kind") or {})}
-    new = [r for k in KINDS for r in prioritize([r for r in new if r["kind"] == k], today)[: int(caps[k])]]
+    new = [r for k in KINDS for r in prioritize([r for r in must if r["kind"] == k], today)
+           + prioritize([r for r in new if r["kind"] == k], today)[: int(caps[k])]]
     # 終わったもの（締切も開催日も過ぎた・30日より前に見つけて日付の無いもの）は忘れる
     def alive(r):
         ds = [d for d in (_d(r, "deadline"), _d(r, "date_end") or _d(r, "date")) if d]
@@ -247,4 +340,4 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
             desc += ln + "\n"
         if desc:
             embeds.append({"title": f"{title}｜{label}", "description": desc.strip(), "color": 0xF06292})
-    return embeds
+    return embeds + extra_embeds

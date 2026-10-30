@@ -627,6 +627,28 @@ embs = local_events.build_embeds(LOC, today=dt.date(2026, 11, 3))
 assert LPROMPTS == [] and embs[0]["title"] == "📍 沿線｜⏰ もうすぐ"
 assert "11/4(水) 受付開始：**スターバックス福袋2027**" in embs[0]["description"]
 assert "11/7(土) 開催：**JAXA相模原キャンパス特別公開**" in embs[0]["description"]
+# 必ず見るサイト: page は本文が変わったときだけ読む、titles は初回は覚えるだけ・増えたものを知らせる
+PAGES = {"https://jaxa/ev": "<p>2026年11月7日 JAXA相模原キャンパス特別公開（事前申込制）</p>",
+         "https://movie/": '<a href="/t/schedule/#cnm1" title="映画A">A</a><a href="/t/schedule/#cnm2" title="映画B">B</a>'}
+local_events.fetch_html = lambda url: PAGES[url]
+local_events.fetch_rss = lambda src, since: []
+PAGE_ASKS = []
+ai_digest.requests.post = lambda url, headers=None, json=None, timeout=None: (
+    PAGE_ASKS.append(json["messages"][0]["content"]) or FakeChat(market.json.dumps({"items": [
+        {"kind": "entry", "name": "相模原キャンパス特別公開2026", "date": "11-07", "note": "事前申込制"}]}, ensure_ascii=False)))
+WCFG = {**LCFG, "local": {"title": "📍 沿線", "sources": [], "watch": [
+    {"name": "JAXA", "type": "page", "url": "https://jaxa/ev"},
+    {"name": "MOVIX", "type": "titles", "title": "🎬 新作", "url": "https://movie/", "pattern": r'schedule/#cnm\d+" title="([^"]+)"'}]}}
+common.STATE_DIR = TMP / "w"
+embs = local_events.build_embeds(WCFG, today=T)
+assert len(PAGE_ASKS) == 1 and "特別公開（事前申込制）" in PAGE_ASKS[0]
+assert embs[0]["title"] == "📍 沿線｜✍️ 申込・エントリーが必要" and "• 📌【11/7(土)】**相模原キャンパス特別公開2026**" in embs[0]["description"]
+assert "[JAXA](https://jaxa/ev)" in embs[0]["description"] and not any("新作" in e["title"] for e in embs)   # 映画は初回は覚えるだけ
+PAGES["https://movie/"] += '<a href="/t/schedule/#cnm3" title="映画C &amp; D">C</a>'
+embs = local_events.build_embeds(WCFG, today=T)
+assert len(PAGE_ASKS) == 1                                              # 本文が同じページは読み直さない
+assert embs[-1]["title"] == "🎬 新作" and embs[-1]["description"].startswith("• 映画C & D\n") and "映画A" not in embs[-1]["description"]
+common.STATE_DIR = TMP
 print("✅ local events")
 
 # ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------
