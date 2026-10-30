@@ -7,6 +7,7 @@ config.yaml の ai_digest.llm.provider で選別・要約に使うLLMを切り�
 LLMが使えない・失敗したときは、キーワード一致した記事の見出しだけを投稿する。
 """
 import calendar
+import datetime as dt
 import html
 import json
 import os
@@ -18,7 +19,7 @@ from collections import Counter
 import feedparser
 import requests
 
-from common import http_get, load_config, load_state, post_discord, save_state, trim_seen
+from common import delete_discord, http_get, load_config, load_state, post_discord, save_state, trim_seen
 
 DEFAULT_TAGS = ["モデル・製品", "研究・論文", "ツール・OSS", "業界・政策", "その他"]
 PALETTE = [0x7E57C2, 0x26A69A, 0x42A5F5, 0xFFA726, 0xEC407A, 0x90A4AE]
@@ -513,6 +514,52 @@ def summarize_with_notebooklm(nb, picked: list[dict], cfg: dict) -> tuple[list[d
     return out, overview
 
 
+def group_sections(embeds: list[dict]) -> list[list[dict]]:
+    """欄をまとまりごとに分ける。長くて「（2）」に分かれた欄は前の欄と同じまとまり。"""
+    groups, part = [], re.compile(r"（\d+）$")
+    for e in embeds:
+        t = e.get("title") or ""
+        if groups and part.search(t) and part.sub("", groups[-1][0].get("title") or "") == part.sub("", t):
+            groups[-1].append(e)
+        else:
+            groups.append([e])
+    return groups
+
+
+def post_sections(webhook: str, title: str, cfg: dict, content: str, embeds: list[dict],
+                  ids: list | None = None) -> None:
+    """見出しの行を投稿し、欄（まとめ・株式・沿線・分類）ごとに1件ずつ投稿する（split_posts）。
+
+    images: thumbnail（右上に小さく）／image（下に大きく）／off。画像は欄の最初の記事のページから取り、
+    取れなければ欄の絵文字の画像。
+    """
+    mode = cfg.get("images", "thumbnail")
+    groups = group_sections(embeds)
+    if mode in ("thumbnail", "image") and os.environ.get("DRY_RUN") != "1":
+        import embed_images
+        for g in groups:
+            try:
+                embed_images.add_image(g[0], mode)
+            except Exception as ex:   # noqa: BLE001  画像が無くても投稿する
+                print("画像を付けられませんでした:", ex)
+    post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, ids=ids)
+    for g in groups:
+        post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), embeds=g, ids=ids)
+
+
+def delete_old_posts(webhook: str, state: dict, keep_days: int, ids: list[str], today: dt.date | None = None) -> None:
+    """今日の投稿のIDを覚え、keep_days 日より前の投稿を Discord から消す（keep_days）。"""
+    today = today or dt.date.today()
+    posted = (state.get("posted") or []) + [{"id": i, "date": today.isoformat()} for i in ids]
+    cutoff = (today - dt.timedelta(days=keep_days)).isoformat()
+    keep = [p for p in posted if p["date"] >= cutoff]
+    old = [p for p in posted if p["date"] < cutoff]
+    failed = [p for p in old if not delete_discord(webhook, p["id"])]
+    if old:
+        print(f"{keep_days}日より前の投稿を消しました: {len(old) - len(failed)}/{len(old)} 件")
+    state["posted"] = failed[-200:] + keep   # 消せなかったものは次回また試す
+
+
 def section_config(section: str) -> dict:
     """config.yaml の区画（ai_digest / ai_global など）。llm を書いていない区画は ai_digest の llm を使う。"""
     full = load_config()
@@ -539,7 +586,7 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
     items = collect(cfg, set(seen))
     print(f"候補 {len(items)} 件")
     pod = cfg.get("podcast") or {}
-    picked, overview, notebook = [], None, None
+    picked, overview, notebook, ids = [], None, None, None
     if items and not seed:
         llm = llm_settings(cfg)
         picked = select_with_llm(items, cfg)
@@ -588,13 +635,23 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
+            ids = [] if cfg.get("keep_days") else None
             try:
-                post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, embeds=embeds)
+                if cfg.get("split_posts"):   # 欄ごとに別の投稿にして、それぞれに画像を付ける
+                    post_sections(webhook, title, cfg, content, embeds, ids=ids)
+                else:
+                    post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content,
+                                 embeds=embeds, ids=ids)
             except BaseException:
                 if notebook:   # 投稿に失敗したらノートを残さない（次回また作り直す）
                     notebook.close()
                 raise
 
+    if cfg.get("keep_days") and os.environ.get("DRY_RUN") != "1":   # 古い投稿を消す
+        try:
+            delete_old_posts(webhook, state, int(cfg["keep_days"]), ids or [])
+        except Exception as ex:   # noqa: BLE001  消せなくても続ける
+            print("古い投稿を消せませんでした:", ex)
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
     save_state(section, state)   # 音声づくり（長い・失敗しうる）の前に既読を確定させる
     if seed:

@@ -73,10 +73,11 @@ def http_get(url: str, timeout: int = 30) -> requests.Response:
 
 
 def post_discord(webhook_env: str, content: str = "", embeds: list | None = None,
-                 username: str | None = None, avatar_url: str | None = None) -> None:
+                 username: str | None = None, avatar_url: str | None = None, ids: list | None = None) -> None:
     """Discord Webhookに投稿。DRY_RUN=1 なら標準出力に表示するだけ。
 
     文字数上限(本文2000字・1メッセージ10embed)を超える場合は分割して送る。
+    ids にリストを渡すと、投稿したメッセージのIDを足す（あとで delete_discord で消すため）。
     """
     embeds = embeds or []
     if os.environ.get("DRY_RUN") == "1":
@@ -128,7 +129,31 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
         if avatar_url:
             p["avatar_url"] = avatar_url
         p["allowed_mentions"] = {"parse": []}
-        _send(url, p)
+        mid = _send(url, p, wait=ids is not None)
+        if ids is not None and mid:
+            ids.append(mid)
+
+
+def _webhook_url(url: str, path: str = "", query: str = "") -> str:
+    """Webhook の URL に /messages/… や ?wait=true を足す（thread_id などの元の ? も残す）。"""
+    base, _, q = url.partition("?")
+    q = "&".join(x for x in (q, query) if x)
+    return base.rstrip("/") + path + (f"?{q}" if q else "")
+
+
+def delete_discord(webhook_env: str, message_id: str) -> bool:
+    """Webhook で投稿したメッセージを消す。消せた（もう無い場合も含む）なら True。"""
+    url = os.environ.get(webhook_env)
+    if not url:
+        return False
+    for attempt in range(4):
+        r = requests.delete(_webhook_url(url, f"/messages/{message_id}"), timeout=30)
+        if r.status_code == 429:
+            time.sleep(float(r.json().get("retry_after", 2)) + 0.5)
+            continue
+        time.sleep(0.6)
+        return r.status_code in (204, 404)
+    return False
 
 
 def post_discord_file(webhook_env: str, path: Path, content: str = "", username: str | None = None,
@@ -164,9 +189,10 @@ def post_discord_file(webhook_env: str, path: Path, content: str = "", username:
     raise RuntimeError("Discordへの添付がレート制限で失敗しました")
 
 
-def _send(url: str, payload: dict) -> None:
+def _send(url: str, payload: dict, wait: bool = False) -> str | None:
+    """投稿する。wait=True なら Discord の返事から投稿のIDを返す。"""
     for attempt in range(4):
-        r = requests.post(url, json=payload, timeout=30)
+        r = requests.post(_webhook_url(url, query="wait=true") if wait else url, json=payload, timeout=30)
         if r.status_code == 429:  # レート制限
             wait = float(r.json().get("retry_after", 2))
             time.sleep(wait + 0.5)
@@ -175,7 +201,12 @@ def _send(url: str, payload: dict) -> None:
             print("Discord error:", r.status_code, r.text[:500])
         r.raise_for_status()
         time.sleep(0.6)
-        return
+        if wait:
+            try:
+                return str(r.json().get("id") or "") or None
+            except ValueError:
+                return None
+        return None
     raise RuntimeError("Discordへの投稿がレート制限で失敗しました")
 
 
