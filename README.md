@@ -236,7 +236,7 @@ Start-ScheduledTask -TaskName 'info-digest news'              # 本番を1回（
 | 朝のダイジェストが来ない | `.local\logs\<区画>-日付.log`。`llm server still down` なら Strata が止まっている |
 | 持参薬アプリが「サーバにつながりません」 | Strata は動いているのにブラウザだけつながらない → モデル設定の `cors_origins`（3-4 の注記）。確認: `curl -X OPTIONS -H "Origin: https://code89314-bit.github.io" -H "Access-Control-Request-Method: POST" -D - https://<PC名>.<tailnet>.ts.net:8445/v1/chat/completions` に `Access-Control-Allow-Origin` があるか |
 | Strata が止まっている | `strata.cmd launch --status --preset "Qwen36 32K"`。`D:\Strata\comfy-mode.flag` があると keepalive が止まったまま → `llm-mode.ps1` |
-| しらべの検索ができない | 調べものは NotebookLM（下の「NotebookLM が使えない」）。使えないときの代わりは SearXNG（`http://127.0.0.1:8888`）。タスク「SearXNG」を実行 |
+| しらべの検索ができない | 調べものは NotebookLM。分野が合えば専門ノート（`python src\nlm_notebooks.py list`、ノートのIDは `.local\nlm_notebooks.json`）、合わなければその場のウェブ調査（下の「NotebookLM が使えない」）。使えないときの代わりは SearXNG（`http://127.0.0.1:8888`）。タスク「SearXNG」を実行 |
 | NotebookLM が使えない | `notebooklm auth refresh`。だめなら 3-7 のログインをやり直す |
 | note の下書きが保存されない | Discord に「ログイン切れ」が来ていたら `note_publish.py --login` |
 | 以前のモデル（Q2_0）に戻したい | docs/HANDOFF.md「Strata のモデルを Qwen3.6 に切り替え」の「戻すとき」 |
@@ -257,6 +257,7 @@ src/
   onco_news.py            がん薬物療法ニュース（毎日ためて曜日テーマで回す）
   learn.py                学習番組
   podcast_nlm.py          NotebookLM（資料の読み込み・要約・podcast）
+  nlm_notebooks.py        しらべの専門ノート（保険点数・経緯・がん薬物療法・がん支持療法。設定は style/nlm_notebooks.yaml）
   note_weekly.py ほか     note の下書き（note_hoken.py・note_publish.py）
   qa_bot.py / qa_deep.py  Discord Bot（疑問深堀り）
   strata_chat.py          トーク（ペルソナ・検索・小説・記憶）

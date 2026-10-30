@@ -875,7 +875,10 @@ class NLMNB:
         NLM_LOG.append("closed")
 
 
+import nlm_notebooks  # noqa: E402
+
 qa_deep.strata_obj = qa_strata
+nlm_notebooks.route = lambda q, cfg: None   # 専門ノートに当てはまらない質問（その場のウェブ調査）
 hist = [{"role": "user", "content": "点滴の話です"}, {"role": "assistant", "content": "どうぞ"},
         {"role": "user", "content": "ハンプとソルデム3Aは混ぜてよい？"}, {"role": "assistant", "content": "少し調べてみます"}]
 r = strata_chat.research_nlm(hist, "ハンプとソルデム3Aは混ぜてよい？", {"notebooklm": {"research_mode": "fast"}}, nb_factory=NLMNB)
@@ -889,6 +892,29 @@ try:
     raise AssertionError("止まらなかった")
 except strata_chat.PrivacyBlocked as ex:
     assert ex.privacy["rewrite"] == "70代の患者で…" and NLM_LOG == []   # NotebookLM には何も送らない
+# 専門ノートに合えば、そこに聞く。資料に答えが無ければ（【資料なし】）その場のウェブ調査へ
+NLM_LOG.clear()
+nlm_notebooks.route = lambda q, cfg: "hoken"
+nlm_notebooks.ask = lambda key, q, ctx="": {"text": "B008 薬剤管理指導料は…\n\n💡 次は？", "sources": [("通知", "https://www.mhlw.go.jp/a.pdf")],
+                                           "name": "しらべ：保険点数"}
+r = strata_chat.research_nlm([{"role": "user", "content": "薬剤管理指導料の算定要件は？"}], "薬剤管理指導料の算定要件は？", {},
+                             nb_factory=NLMNB)
+assert r == {"text": "B008 薬剤管理指導料は…", "sources": [("通知", "https://www.mhlw.go.jp/a.pdf")], "via": "しらべ：保険点数"}
+assert NLM_LOG == []                                                   # その場のノートは作らない
+nlm_notebooks.ask = lambda key, q, ctx="": None
+r = strata_chat.research_nlm([{"role": "user", "content": "薬剤管理指導料の算定要件は？"}], "薬剤管理指導料の算定要件は？", {},
+                             nb_factory=NLMNB)
+assert r["via"] == "" and NLM_LOG[-1] == "closed"
+# 振り分け: 作ってあるノートだけから選ぶ。知らないキーは選ばない
+import importlib  # noqa: E402
+
+nlm_notebooks = importlib.reload(nlm_notebooks)
+nlm_notebooks.ids = lambda: {"hoken": "nb-h"}
+qa_deep.strata_obj = lambda prompt, cfg: {"notebook": "onco" if "がん" in prompt.split("ノート:")[0] else "hoken"}
+assert nlm_notebooks.route("外来化学療法の加算は？", {}) == "hoken"
+assert nlm_notebooks.route("がんのレジメンは？", {}) is None           # onco は未作成
+assert "しらべ：保険点数" == nlm_notebooks.notebooks()["hoken"]["name"]
+qa_deep.strata_obj = qa_strata
 print("✅ drug names / notebooklm (shirabe)")
 
 # Discordの分割ロジック
