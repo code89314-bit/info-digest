@@ -395,6 +395,18 @@ def research_nlm(history: list[dict], user_text: str, cfg: dict, nb_factory=None
     privacy = qa_deep.privacy_check(question + "\n" + context, cfg)
     if not privacy["ok"]:
         raise PrivacyBlocked(privacy)
+    # 分野の専門ノート（style/nlm_notebooks.yaml）に合えば、そこに聞く。資料に答えが無ければ、その場のウェブ調査へ
+    import nlm_notebooks
+    key = nlm_notebooks.route(question + "\n" + context, cfg)
+    if key:
+        try:
+            got = nlm_notebooks.ask(key, question, context)
+        except Exception as ex:   # noqa: BLE001
+            print(f"専門ノート {key} に聞けませんでした:", ex)
+            got = None
+        if got:
+            text = re.sub(r"\n+💡[^\n]*\s*$", "", got["text"])
+            return {"text": text, "sources": got["sources"][: int(ncfg.get("max_sources", 5))], "via": got["name"]}
     if nb_factory is None:
         import podcast_nlm
         base = (load_config().get("onco") or {}).get("podcast") or {}   # CLI の場所・認証の設定は音声と共通
@@ -414,7 +426,7 @@ def research_nlm(history: list[dict], user_text: str, cfg: dict, nb_factory=None
     text = re.sub(r"\n+💡[^\n]*\s*$", "", text.strip())
     if not text:
         raise LLMError("NotebookLM から答えを得られませんでした")
-    return {"text": text.strip(), "sources": srcs[: int(ncfg.get("max_sources", 5))]}
+    return {"text": text.strip(), "sources": srcs[: int(ncfg.get("max_sources", 5))], "via": ""}
 
 
 # ---- 小説 ----

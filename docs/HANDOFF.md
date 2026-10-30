@@ -235,3 +235,19 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 必要: `.env` に `DISCORD_BOT_TOKEN` と `DISCORD_QA_CHANNEL_ID`、開発者ポータルで Message Content Intent を ON、`pip install discord.py`。
 - 起動: タスク「info-digest qa bot」（ログオン時、`scripts/run_qa_bot.ps1`。落ちたら60秒後に再起動）。ログは `.local/logs/qa_bot-YYYYMMDD.log`。
 - note のブラウザ（プロフィール）は同時に1つしか開けないので、`note_publish.save_draft` はロック（`.local/note_profile.lock`）を取ってから動く。
+
+## しらべの調べもの（NotebookLM）と専門ノート 2026-10-30
+
+- 理由: 商品名→一般名の30問で、ローカルのモデルは取り違えが多かった（Qwen3.6 正解8、Gemma 16、Flash-Next Q2_0 5、Coder 0。Flash-Next は削除）。
+  役割: ルナ＝Gemma、定時のタスク＝Qwen3.6、正確さが要る調べもの＝NotebookLM。
+- しらべ（`style/personas/shirabe.yaml` の `research_with: notebooklm`）: Strata が患者情報を確認 → 分野を選ぶ（`nlm_notebooks.route`。
+  薬の名前は扱わせず、分野を選ぶだけ）→ 合う専門ノートに聞く。資料に答えが無ければ（1行目「【資料なし】」）その場のノートでウェブ調査。
+  答えは Strata で書き直さずに出す。NotebookLM が使えなければ SearXNG 検索。
+- 専門ノート（`style/nlm_notebooks.yaml`、IDは `.local/nlm_notebooks.json`。作る・足す: `python src\nlm_notebooks.py build <キー> [調査の番号…]`）:
+  - 保険点数（いまの告示・通知・施設基準・疑義解釈）と、保険点数の経緯（令和2〜6年度の個別改定項目・疑義解釈・中医協資料）。
+    保険の質問は2冊に同時に聞き、「いまのルール」と「📜 経緯」を並べる（使う人が調べる順: ①最新の行政文書 ②疑義解釈 ③いつから・なぜ）。
+  - がん薬物療法（がん種ごとに、周術期と再発・切除不能で治療ライン・レジメン・コンパニオン診断がどう変わるか。量・中止基準などの詳細は
+    適正使用ガイドへ。あとでがん種ごとのノートに分ける予定）と、がん支持療法（制吐・G-CSF・irAE・HBV 再活性化など）。
+  - 1冊の資料は50件まで（このアカウント）。ウェブ調査で集めた資料は一次資料（`qa_deep.is_primary`）だけ残す。
+  - NotebookLM の `ask` は既定で前の会話を続けるので、`--new` で毎回新しく聞く。
+- ギモン深堀り: 疑問のカタカナの薬名が Strata の検索語・調査指示から消えていたら足し直す（`strata_chat.kana_names`）。

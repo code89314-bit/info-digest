@@ -277,7 +277,7 @@ class QABot(discord.Client):
                     try:
                         async with msg.channel.typing():
                             res = await asyncio.to_thread(strata_chat.research_nlm, history, msg.content, ccfg)
-                        how = " NotebookLM で調べました"
+                        how = f" NotebookLM（{res['via']}）で調べました" if res.get("via") else " NotebookLM で調べました"
                     except strata_chat.PrivacyBlocked as ex:
                         p = ex.privacy
                         await self.chat_send(msg, "🛑 患者・職員を特定しうる情報が含まれている可能性があるので、外部には送らずに止めました。\n"
