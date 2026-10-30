@@ -66,6 +66,7 @@ SKILLS = {
 - 描画モードのあいだ（数十分）はおしゃべりできないことを、一言で伝えておく。
 """},
 }
+BARE_TAG = re.compile(r"\[\[\s*([^\[\]:：]+?)\s*\]\]\s*$")   # 名前の無い [[…]]（最後の行）
 SKILL_TAG = re.compile(r"\[\[\s*(" + "|".join(s["tag"] for s in SKILLS.values()) + r")\s*[:：]\s*(.+?)\]\]", re.S)
 TAG_TO_SKILL = {s["tag"]: sid for sid, s in SKILLS.items()}
 
@@ -292,6 +293,12 @@ def reply(history: list[dict], cfg: dict) -> dict:
     text = _talk(system, history, cfg, persona)
     m = SKILL_TAG.search(text)
     sid = TAG_TO_SKILL.get(m.group(1)) if m else None
+    if not m and "web_search" in skills:
+        # Qwen3.6 は「検索:」を落として [[語1 | 語2]] だけ書くことがある（2026-10-30。「調べてみます」で止まった）
+        bare = BARE_TAG.search(text)
+        if bare:
+            return {"text": BARE_TAG.sub("", text).strip() or "ちょっと待ってて", "skill": "web_search",
+                    "arg": bare.group(1).strip()}
     if not m or sid not in skills:
         return {"text": SKILL_TAG.sub("", text).strip() or "（うまく返事を作れませんでした。もう一度送ってください）",
                 "skill": None, "arg": ""}
