@@ -669,6 +669,11 @@ strata_chat:
   max_tokens: 3000
   # 答える前に考える量の上限（大きいほど丁寧だが遅い。0で無制限）
   reasoning_budget_tokens: 512
+  # NotebookLM で調べる（ペルソナの research_with: notebooklm のとき。いまは しらべ）
+  notebooklm:
+    research_mode: fast    # ウェブ調査の深さ（deep は資料が多いが10分ほどかかる）
+    max_chars: 800         # 答えの長さの目安（字）
+    max_sources: 5         # 出典として並べる資料の数
   # スキル「小説」（ペルソナの skills に novel があるとき）
   novel:
     chars: 4000            # 指示する長さ（字）。会話で指定があればそちら。Gemma は指定より短く書きがち（2500 で実際は900〜1200字）。およそ3000字を狙って 4000（2026-10-29）

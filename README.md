@@ -20,7 +20,7 @@ X やニュースアプリを見なくても済むように、必要な一次情
 | がん薬物療法ニュース | 毎日ためて、曜日テーマで要約＋podcast | 自宅PC | 毎日 6:30 |
 | 朝のニュース | NHK・ITmedia から関心に合うものだけ（広告なしで読める要約）＋米国株（S&P500・ビッグテックの値動きと原因） | 自宅PC | 毎日 6:50 |
 | note 下書き | 週刊がん薬物療法ニュース（土）・保険の話（水）を note に下書き保存 | 自宅PC | 土・水 7:00 |
-| 疑問深堀り・トーク | Discord Bot（しらべ＝ウェブ検索、ルナ＝小説・画像） | 自宅PC（常駐） | いつでも |
+| 疑問深堀り・トーク | Discord Bot（しらべ＝NotebookLM で調べもの、ルナ＝小説・画像） | 自宅PC（常駐） | いつでも |
 
 ## 2. 全体の構成
 
@@ -134,7 +134,7 @@ python -m venv .venv
 - `gemma-4-26B-A4B-it-uncensored-heretic.i1-IQ4_XS.gguf`（[mradermacher/gemma-4-26B-A4B-it-uncensored-heretic-i1-GGUF](https://huggingface.co/mradermacher/gemma-4-26B-A4B-it-uncensored-heretic-i1-GGUF)）
 - `gemma-4-26B-A4B-it-uncensored-heretic.mmproj-f16.gguf`（[mradermacher/gemma-4-26B-A4B-it-uncensored-heretic-GGUF](https://huggingface.co/mradermacher/gemma-4-26B-A4B-it-uncensored-heretic-GGUF)）
 
-**SearXNG**（しらべのウェブ検索。`127.0.0.1:8888`、外には公開しない）:
+**SearXNG**（しらべのウェブ検索。NotebookLM が使えないときの代わり。`127.0.0.1:8888`、外には公開しない）:
 
 ```powershell
 git clone https://github.com/searxng/searxng.git D:\searxng
@@ -236,7 +236,7 @@ Start-ScheduledTask -TaskName 'info-digest news'              # 本番を1回（
 | 朝のダイジェストが来ない | `.local\logs\<区画>-日付.log`。`llm server still down` なら Strata が止まっている |
 | 持参薬アプリが「サーバにつながりません」 | Strata は動いているのにブラウザだけつながらない → モデル設定の `cors_origins`（3-4 の注記）。確認: `curl -X OPTIONS -H "Origin: https://code89314-bit.github.io" -H "Access-Control-Request-Method: POST" -D - https://<PC名>.<tailnet>.ts.net:8445/v1/chat/completions` に `Access-Control-Allow-Origin` があるか |
 | Strata が止まっている | `strata.cmd launch --status --preset "Qwen36 32K"`。`D:\Strata\comfy-mode.flag` があると keepalive が止まったまま → `llm-mode.ps1` |
-| しらべの検索ができない | SearXNG（`http://127.0.0.1:8888`）。タスク「SearXNG」を実行 |
+| しらべの検索ができない | 調べものは NotebookLM（下の「NotebookLM が使えない」）。使えないときの代わりは SearXNG（`http://127.0.0.1:8888`）。タスク「SearXNG」を実行 |
 | NotebookLM が使えない | `notebooklm auth refresh`。だめなら 3-7 のログインをやり直す |
 | note の下書きが保存されない | Discord に「ログイン切れ」が来ていたら `note_publish.py --login` |
 | 以前のモデル（Q2_0）に戻したい | docs/HANDOFF.md「Strata のモデルを Qwen3.6 に切り替え」の「戻すとき」 |

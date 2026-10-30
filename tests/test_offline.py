@@ -828,6 +828,57 @@ assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
 print("✅ qa_deep")
 
+# ---------- 薬の名前を言い換えさせない（ギモン深堀りの検索語・しらべの NotebookLM） ----------
+import strata_chat  # noqa: E402
+
+assert strata_chat.kana_names("ソルデムとハンプの配合変化をガイドラインで") == ["ソルデム", "ハンプ"]
+assert strata_chat.search_queries("ミルリノン 配合変化", "ソルデムとハンプの配合変化")[0] == "ソルデム ハンプ 配合変化"
+
+
+def swap_strata(prompt, cfg):   # Strata が商品名を別の薬の一般名に言い換えた
+    return {"title": "ミルリノンの配合変化", "points": ["配合変化は？"], "queries": ["ミルリノン 配合変化"],
+            "research": "ミルリノンの添付文書"}
+
+
+qa_deep.strata_obj = swap_strata
+plan = qa_deep.interpret("ハンプとソルデム3Aは混ぜてよい？", {})
+assert plan["queries"][0] == "ハンプ ソルデム 添付文書" and "ミルリノン 配合変化" in plan["queries"]
+assert "ハンプ、ソルデム" in plan["research"]
+NLM_LOG = []
+
+
+class NLMNB:
+    def research(self, query, mode="fast", fallback=None):
+        NLM_LOG.append(("research", query, mode))
+        return 2
+
+    def ask(self, q):
+        NLM_LOG.append(("ask", q))
+        return "PMDA の添付文書では、カルペリチド（ハンプ）は…\n\n💡 ほかの輸液も確認されますか？"
+
+    def sources(self):
+        return [{"title": "ハンプ 添付文書", "url": "https://www.pmda.go.jp/h.pdf"}, {"title": "メモ", "url": ""}]
+
+    def close(self):
+        NLM_LOG.append("closed")
+
+
+qa_deep.strata_obj = qa_strata
+hist = [{"role": "user", "content": "点滴の話です"}, {"role": "assistant", "content": "どうぞ"},
+        {"role": "user", "content": "ハンプとソルデム3Aは混ぜてよい？"}, {"role": "assistant", "content": "少し調べてみます"}]
+r = strata_chat.research_nlm(hist, "ハンプとソルデム3Aは混ぜてよい？", {"notebooklm": {"research_mode": "fast"}}, nb_factory=NLMNB)
+assert r["text"] == "PMDA の添付文書では、カルペリチド（ハンプ）は…" and r["sources"] == [("ハンプ 添付文書", "https://www.pmda.go.jp/h.pdf")]
+assert "「ハンプ」「ソルデム」の名前のまま" in NLM_LOG[0][1] and NLM_LOG[-1] == "closed"
+ask = NLM_LOG[1][1]
+assert "相手: 点滴の話です" in ask and ask.count("ハンプとソルデム3Aは混ぜてよい？") == 1 and "少し調べてみます" not in ask
+NLM_LOG.clear()
+try:
+    strata_chat.research_nlm([{"role": "user", "content": "山田さんのハンプ"}], "山田さんのハンプ", {}, nb_factory=NLMNB)
+    raise AssertionError("止まらなかった")
+except strata_chat.PrivacyBlocked as ex:
+    assert ex.privacy["rewrite"] == "70代の患者で…" and NLM_LOG == []   # NotebookLM には何も送らない
+print("✅ drug names / notebooklm (shirabe)")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

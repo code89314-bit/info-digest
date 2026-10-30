@@ -272,9 +272,25 @@ class QABot(discord.Client):
             history.append({"role": "assistant", "name": "アシスタント", "content": first["text"]})
             if first["skill"] == "web_search":
                 queries = strata_chat.search_queries(first["arg"], msg.content)
-                async with msg.channel.typing():
-                    res = await asyncio.to_thread(strata_chat.research, history, queries, ccfg)
-                text = res["text"] + SOURCES_MARK + " 検索: " + " / ".join(queries)
+                res, how = None, " 検索: " + " / ".join(queries)
+                if persona.get("research_with") == "notebooklm":   # 調べて答えるのは NotebookLM（書き直さずに出す）
+                    try:
+                        async with msg.channel.typing():
+                            res = await asyncio.to_thread(strata_chat.research_nlm, history, msg.content, ccfg)
+                        how = " NotebookLM で調べました"
+                    except strata_chat.PrivacyBlocked as ex:
+                        p = ex.privacy
+                        await self.chat_send(msg, "🛑 患者・職員を特定しうる情報が含まれている可能性があるので、外部には送らずに止めました。\n"
+                                             + "".join(f"- {r}\n" for r in p["reasons"])
+                                             + (f"言い換えの例: {p['rewrite']}" if p["rewrite"] else ""))
+                        return
+                    except Exception as ex:   # noqa: BLE001  NotebookLM が使えなければ、いつもの検索で答える
+                        log.error("notebooklm: %s", traceback.format_exc())
+                        how += f"（NotebookLM が使えなかったため: {str(ex)[:80]}）"
+                if res is None:
+                    async with msg.channel.typing():
+                        res = await asyncio.to_thread(strata_chat.research, history, queries, ccfg)
+                text = res["text"] + SOURCES_MARK + how
                 text += "".join(f"\n-# [{t[:60]}](<{u}>)" for t, u in res["sources"])
                 await self.chat_send(msg, text)
                 history.append({"role": "assistant", "name": "アシスタント", "content": res["text"]})

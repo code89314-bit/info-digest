@@ -17,6 +17,7 @@ import sys
 from urllib.parse import urlparse
 
 import ai_digest
+import strata_chat
 from ai_digest import CHAT, llm_settings
 from common import ROOT, load_config
 from note_weekly import EMOJI, PRIMARY as NEWS_PRIMARY, clean, is_primary_host, parse_obj, sentences
@@ -59,6 +60,8 @@ INTERPRET_PROMPT = """あなたは、病院薬剤師の調べものを手伝う�
 - queries: ウェブ検索語。4〜6個。各10語以内。資料の種類ごとに分ける:
   日本の添付文書・インタビューフォーム（PMDA）、国内学会のガイドライン、厚労省・行政資料、英語の論文・海外ガイドライン（PubMed・KDIGO・NCCN など）。
 - research: NotebookLM のウェブ調査への指示（日本語、1〜2文。探す資料の種類を具体的に）。
+- 薬は疑問に書かれた名前（商品名）のまま title・points・queries・research に入れる。一般名・成分名に言い換えない
+  （知っているつもりでも取り違えることがある）。英語の検索語だけは一般名でよい。
 
 JSONのみを出力:
 {{"title": "...", "interpretation": "...", "points": ["...", "..."], "queries": ["...", "..."], "research": "..."}}"""
@@ -124,9 +127,17 @@ def interpret(text: str, cfg: dict) -> dict:
     title = clean(got.get("title")) or text[:25]
     points = [clean(p) for p in got.get("points") or [] if clean(p)][:6]
     queries = [clean(q) for q in got.get("queries") or [] if clean(q)][:6]
+    research = clean(got.get("research")) or f"{title}について、添付文書・ガイドライン・論文などの一次資料"
+    # 疑問に書かれた薬の名前（カタカナ）が検索語・調査指示から消えていたら足し直す
+    # （Strata が商品名を別の薬の一般名に言い換えると、NotebookLM が別の薬の資料を集める。2026-10-30）
+    names = strata_chat.kana_names(text)
+    missing = [n for n in names if not any(n in q for q in queries)]
+    if missing:
+        queries = [" ".join(missing + ["添付文書"])] + queries[:5]
+    if names and not all(n in research for n in names):
+        research += f"（対象の薬: {'、'.join(names)}。この名前のまま探す）"
     return {"title": title[:30], "interpretation": clean(got.get("interpretation")),
-            "points": points or [text], "queries": queries or [title],
-            "research": clean(got.get("research")) or f"{title}について、添付文書・ガイドライン・論文などの一次資料"}
+            "points": points or [text], "queries": queries or [title], "research": research}
 
 
 def gather(nb, plan: dict, cfg: dict) -> list[str]:
