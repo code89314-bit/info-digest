@@ -92,6 +92,18 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
     if not url:
         raise SystemExit(f"環境変数 {webhook_env} が未設定です（GitHubのSecrets、自宅サーバーでは .env に登録してください）")
 
+    for p in _payloads(content, embeds):
+        if username:
+            p["username"] = username
+        if avatar_url:
+            p["avatar_url"] = avatar_url
+        mid = _send(url, p, wait=ids is not None)
+        if ids is not None and mid:
+            ids.append(mid)
+
+
+def _payloads(content: str, embeds: list) -> list[dict]:
+    """本文と embed を、Discord の1メッセージの上限に収まるように分ける。"""
     # embedの説明文は4096字まで
     for e in embeds:
         if "description" in e and len(e["description"]) > 4000:
@@ -121,17 +133,61 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
         else:
             payloads.append({"content": "", "embeds": ch})
 
+    out = []
     for p in payloads:
-        if not p["content"] and not p["embeds"]:
+        if p["content"] or p["embeds"]:
+            p["allowed_mentions"] = {"parse": []}
+            out.append(p)
+    return out
+
+
+API = "https://discord.com/api/v10"
+
+
+def _bot_headers() -> dict:
+    token = os.environ.get("DISCORD_BOT_TOKEN")
+    if not token:
+        raise SystemExit("環境変数 DISCORD_BOT_TOKEN が未設定です（.env に登録してください）")
+    return {"Authorization": f"Bot {token}"}
+
+
+def post_channel(channel_env: str, content: str = "", embeds: list | None = None, ids: list | None = None) -> None:
+    """Bot（DISCORD_BOT_TOKEN）でチャンネル（ID は環境変数 channel_env）に投稿する。DRY_RUN=1 なら表示するだけ。
+    Webhook を作らなくても、Bot が書き込めるチャンネルなら投稿できる（名前・アイコンは Bot のもの）。"""
+    embeds = embeds or []
+    if os.environ.get("DRY_RUN") == "1":
+        return post_discord("", content=content, embeds=embeds)
+    ch = os.environ.get(channel_env)
+    if not ch:
+        raise SystemExit(f"環境変数 {channel_env} が未設定です（.env にチャンネルIDを登録してください）")
+    for p in _payloads(content, embeds):
+        for attempt in range(4):
+            r = requests.post(f"{API}/channels/{ch}/messages", headers=_bot_headers(), json=p, timeout=30)
+            if r.status_code == 429:
+                time.sleep(float(r.json().get("retry_after", 2)) + 0.5)
+                continue
+            if r.status_code >= 400:
+                print("Discord error:", r.status_code, r.text[:300])
+            r.raise_for_status()
+            time.sleep(0.6)
+            if ids is not None:
+                ids.append(str(r.json().get("id")))
+            break
+
+
+def delete_channel_message(channel_env: str, message_id: str) -> bool:
+    """post_channel で投稿したメッセージを消す。消せた（もう無い場合も含む）なら True。"""
+    ch = os.environ.get(channel_env)
+    if not ch:
+        return False
+    for attempt in range(4):
+        r = requests.delete(f"{API}/channels/{ch}/messages/{message_id}", headers=_bot_headers(), timeout=30)
+        if r.status_code == 429:
+            time.sleep(float(r.json().get("retry_after", 2)) + 0.5)
             continue
-        if username:
-            p["username"] = username
-        if avatar_url:
-            p["avatar_url"] = avatar_url
-        p["allowed_mentions"] = {"parse": []}
-        mid = _send(url, p, wait=ids is not None)
-        if ids is not None and mid:
-            ids.append(mid)
+        time.sleep(0.6)
+        return r.status_code in (204, 404)
+    return False
 
 
 def _webhook_url(url: str, path: str = "", query: str = "") -> str:

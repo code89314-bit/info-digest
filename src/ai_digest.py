@@ -647,6 +647,10 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                 except Exception as ex:   # noqa: BLE001  沿線の欄が作れなくてもニュースは投稿する
                     print("沿線の欄を作れませんでした:", ex)
                     lo = []
+                try:   # news.local.summary: 受付中・開催中のまとめ（別のチャンネル）
+                    local_events.post_summary(cfg)
+                except Exception as ex:   # noqa: BLE001
+                    print("受付中・開催中のまとめを投稿できませんでした:", ex)
                 at = sum(1 for e in embeds[:2] if e["title"].startswith(("📋", "📈")))   # まとめ・株式の次
                 embeds[at:at] = lo
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
