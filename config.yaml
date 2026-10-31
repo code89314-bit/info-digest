@@ -192,9 +192,10 @@ news:
   webhook_env: DISCORD_WEBHOOK_NEWS
   # 欄（まとめ・株式・沿線・分類）ごとに別の投稿にする
   split_posts: true
-  # 欄に付ける画像: thumbnail（右上に小さく）／image（下に大きく）／off。
+  # 欄に付ける画像: header（欄の見出し・日付・画像を本文の上に。本文の幅は狭くならない）／
+  # thumbnail（右上に小さく。本文の幅が狭くなる）／image（本文の下に大きく）／off。
   # 欄の最初の記事のページの写真。取れなければ欄の絵文字の絵
-  images: thumbnail
+  images: header
   # この日数より前の朝のニュースの投稿を、毎朝の投稿のあとで Discord から消す（消すと戻せない。0 か削除で消さない）。
   # 消せるのはこの仕組みを入れた 2026-10-31 以降の投稿だけ
   keep_days: 7

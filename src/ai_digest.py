@@ -530,16 +530,33 @@ def post_sections(webhook: str, title: str, cfg: dict, content: str, embeds: lis
                   ids: list | None = None) -> None:
     """見出しの行を投稿し、欄（まとめ・株式・沿線・分類）ごとに1件ずつ投稿する（split_posts）。
 
-    images: thumbnail（右上に小さく）／image（下に大きく）／off。画像は欄の最初の記事のページから取り、
-    取れなければ欄の絵文字の画像。
+    images: header（欄の見出し・日付・画像を本文の上に置く。本文の幅は狭くならない）／
+    thumbnail（右上に小さく。本文の幅が狭くなる）／image（本文の下に大きく）／off。
+    画像は欄の最初の記事のページから取り、取れなければ欄の絵文字の画像。
+    どの欄にも投稿の日時（Discord が「今日 6:50」「昨日」などと出す）を付ける。
     """
-    mode = cfg.get("images", "thumbnail")
+    mode = cfg.get("images", "header")
     groups = group_sections(embeds)
-    if mode in ("thumbnail", "image") and os.environ.get("DRY_RUN") != "1":
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+    day = f"{jst:%m/%d}（{'月火水木金土日'[jst.weekday()]}）"
+    for g in groups:
+        g[-1]["timestamp"] = now
+        if mode == "header":
+            head = {"title": f"{re.sub(r'（1）$', '', g[0].get('title') or '')}　{day}", "color": g[0].get("color")}
+            g[0] = {k: v for k, v in g[0].items() if k != "title"}
+            g.insert(0, head)
+    if mode in ("header", "thumbnail", "image") and os.environ.get("DRY_RUN") != "1":
         import embed_images
         for g in groups:
             try:
-                embed_images.add_image(g[0], mode)
+                if mode == "header":   # 画像は本文（2つめ）の記事から探して、見出しの欄に付ける
+                    probe = {"title": g[0]["title"], "description": g[1].get("description") or ""}
+                    embed_images.add_image(probe, "image")
+                    if probe.get("image"):
+                        g[0]["image"] = probe["image"]
+                else:
+                    embed_images.add_image(g[0], mode)
             except Exception as ex:   # noqa: BLE001  画像が無くても投稿する
                 print("画像を付けられませんでした:", ex)
     post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content, ids=ids)

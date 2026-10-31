@@ -580,6 +580,14 @@ assert SENT_SEC[2]["embeds"][0]["thumbnail"]["url"].endswith("/1f4c8.png")
 assert SENT_SEC[3]["embeds"][0]["thumbnail"]["url"] == "https://img/a.jpg"    # 最初の記事の写真
 assert "thumbnail" not in SENT_SEC[3]["embeds"][1]                            # 続きの欄には付けない
 assert SENT_SEC[4]["embeds"][0]["thumbnail"]["url"].endswith("/1f3d9.png")   # 写真が無ければ絵文字
+# header（既定）: 見出し・日付・画像の欄を本文の上に置き、本文には画像を付けない（幅が狭くならない）
+SENT_SEC.clear()
+ai_digest.post_sections("W", "朝のニュース", {}, "📰 見出し", [dict(e) for e in SEC])
+kokusai = SENT_SEC[3]["embeds"]
+assert len(kokusai) == 3 and kokusai[0]["title"].startswith("🌏 国際　") and "（1）" not in kokusai[0]["title"]
+assert kokusai[0]["image"]["url"] == "https://img/a.jpg" and "title" not in kokusai[1]
+assert not any(k in kokusai[1] for k in ("image", "thumbnail")) and "timestamp" in kokusai[2]
+assert SENT_SEC[2]["embeds"][0]["image"]["url"].endswith("/1f4c8.png") and "timestamp" in SENT_SEC[2]["embeds"][1]
 embed_images.og_image, ai_digest.post_discord = orig_og, orig_post
 os.environ["DRY_RUN"] = "1"
 print("✅ split posts / images")
