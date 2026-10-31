@@ -9,11 +9,12 @@
 import datetime as dt
 import html
 import json
+import os
 import re
 import time
 
 from ai_digest import CHAT, LLMError, fetch_rss, ja_fix, llm_settings, strip_think
-from common import load_state, save_state
+from common import delete_channel_message, load_state, post_channel, save_state
 
 STATE = "local_events"
 KINDS = {"entry": "✍️ 申込・エントリーが必要", "event": "🎪 イベント", "opening": "🍽️ 新しいお店・施設"}
@@ -341,3 +342,95 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
         if desc:
             embeds.append({"title": f"{title}｜{label}", "description": desc.strip(), "color": 0xF06292})
     return embeds + extra_embeds
+
+
+# ---- 受付中・開催中のまとめ（別のチャンネル。休日に前の投稿をさかのぼらなくても見られるように） ----
+def summary_sections(items: list[dict], today: dt.date) -> list[tuple[str, list[dict]]]:
+    """覚えているもののうち、申込を受け付けている・これから受け付けるもの（締切順）と、
+    開催中・これから開催するイベント（開催日順）。終わったものは入れない。"""
+    def open_entry(r):
+        dl = _d(r, "deadline")
+        return r["kind"] == "entry" and (dl is None or dl >= today)
+
+    def end(r):
+        return _d(r, "date_end") or _d(r, "date")
+    entries = sorted([r for r in items if open_entry(r)],
+                     key=lambda r: (_d(r, "deadline") is None, _d(r, "deadline") or today))
+    events = [r for r in items if r["kind"] == "event" and end(r) and end(r) >= today]
+    now = sorted([r for r in events if _d(r, "date") <= today], key=end)
+    later = sorted([r for r in events if _d(r, "date") > today], key=lambda r: _d(r, "date"))
+    undated = [r for r in items if r["kind"] == "event" and not end(r)]
+    return [("✍️ 申込を受付中・受付予定（締切の近い順）", entries), ("🎪 開催中（終わる日の近い順）", now),
+            ("🗓️ これから開催（開催日の近い順）", later), ("❔ 日付の分からないイベント", undated)]
+
+
+def weekend_mark(r: dict, today: dt.date) -> str:
+    """次の土日に開催しているイベントに ⭐ を付ける。"""
+    d0, d1 = _d(r, "date"), _d(r, "date_end") or _d(r, "date")
+    if not d0:
+        return ""
+    if today.weekday() == 6:   # 日曜はその日だけ
+        sat = today - dt.timedelta(days=1)
+    else:
+        sat = today + dt.timedelta(days=5 - today.weekday())
+    return "⭐" if d0 <= sat + dt.timedelta(days=1) and d1 >= sat else ""
+
+
+def summary_line(r: dict, today: dt.date) -> str:
+    """まとめの1件: 名前の行の下に、日付・場所・内容・リンクを字下げして並べる（見分けやすく）。"""
+    dl, st, d0, d1 = _d(r, "deadline"), _d(r, "entry_start"), _d(r, "date"), _d(r, "date_end")
+    mark = (weekend_mark(r, today) if r["kind"] == "event" else "") + ("📌" if r.get("must") else "")
+    rows = [f"- {mark}**{r['name']}**"]
+    if st or dl:
+        rows.append("  - 受付 " + (f"{fmt_day(st)}〜" if st else "") + (f"{fmt_day(dl)} 締切" if dl else ""))
+    if d0 and d0 not in (st, dl):
+        rows.append(f"  - 開催 {fmt_day(d0)}" + (f"〜{fmt_day(d1)}" if d1 and d1 != d0 else ""))
+    if r.get("place"):
+        rows.append(f"  - 場所 {r['place']}")
+    if r.get("note"):
+        rows.append(f"  - {r['note']}")
+    rows.append(f"  - [{r['site'].replace('[', '［').replace(']', '］')}]({r['link']})")
+    return "\n".join(rows)
+
+
+def summary_embeds(items: list[dict], today: dt.date, lc: dict) -> list[dict]:
+    embeds, limit = [], int(lc.get("max_chars", 3800))
+    for label, recs in summary_sections(items, today):
+        desc, part = "", 1
+        for r in recs:
+            ln = summary_line(r, today)
+            if desc and len(desc) + len(ln) + 1 > limit:   # 長ければ同じ見出しの「（2）」に続ける
+                embeds.append({"title": f"{label}（{part}）", "description": desc.strip(), "color": 0x7E57C2})
+                desc, part = "", part + 1
+            desc += ln + "\n"
+        if desc:
+            embeds.append({"title": label if part == 1 else f"{label}（{part}）", "description": desc.strip(),
+                           "color": 0x7E57C2})
+    return embeds
+
+
+def post_summary(cfg: dict, today: dt.date | None = None) -> None:
+    """news.local.summary: 前回のまとめを消して、今日のまとめを投稿する（そのチャンネルにはいつも最新の1回分だけ）。
+    投稿は Bot（DISCORD_BOT_TOKEN）で、チャンネルIDは .env の channel_env（既定 DISCORD_LOCAL_CHANNEL_ID）。"""
+    lc = cfg.get("local") or {}
+    sm = lc.get("summary") or {}
+    if not sm.get("enabled"):
+        return
+    channel = sm.get("channel_env") or "DISCORD_LOCAL_CHANNEL_ID"
+    if not os.environ.get(channel) and os.environ.get("DRY_RUN") != "1":
+        print(f"受付中・開催中のまとめ: .env に {channel} が無いので投稿しません")
+        return
+    today = today or dt.date.today()
+    state = load_state(STATE)
+    embeds = summary_embeds(state.get("items") or [], today, lc)
+    content = (f"📋 **{sm.get('title') or '受付中・開催中のまとめ'}**（{fmt_day(today)} 時点・{lc.get('title') or ''}）\n"
+               "-# 毎朝作り直します。⭐ は次の土日にやっているもの、📌 は必ず見るサイトから")
+    if not embeds:
+        content += "\n今は受付中・開催予定のものはありません"
+    if os.environ.get("DRY_RUN") != "1":
+        for mid in state.get("summary_ids") or []:
+            delete_channel_message(channel, mid)
+    ids = []
+    post_channel(channel, content=content, embeds=embeds, ids=ids)
+    state["summary_ids"] = ids
+    save_state(STATE, state)

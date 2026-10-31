@@ -322,6 +322,13 @@ news:
       行政の計画・会議・統計、企業の決算、すでに終わったイベントの報告、全国のポイント還元・キャッシュレス決済のキャンペーン
     lookback_days: 7          # 何日前までの見出しを見るか（イベントは数週間前に告知されるので長め）
     remind_days: 7            # 締切・開催日の何日前から「⏰ もうすぐ」に出すか
+    # 受付中・開催中のまとめ（申込・イベントのうち、まだ終わっていないもの全部）。別のチャンネルに毎朝作り直す
+    # （前の回は消すので、そのチャンネルにはいつも最新の1回分だけ）。投稿は Bot（DISCORD_BOT_TOKEN）で、
+    # 投稿先のチャンネルIDは .env の DISCORD_LOCAL_CHANNEL_ID（いまは「イベント」チャンネル）
+    summary:
+      enabled: true
+      channel_env: DISCORD_LOCAL_CHANNEL_ID
+      title: 受付中・開催中のまとめ
     # 1日に新しく載せる最大数（分類ごと。日付の近い順。あふれたものも覚えておき、近づいたら「⏰ もうすぐ」に出す）
     max_per_kind: {entry: 10, event: 15, opening: 8}
     max_headlines: 250        # LLM に見せる見出しの最大数

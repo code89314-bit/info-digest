@@ -734,6 +734,39 @@ assert embs[-1]["title"] == "🎬 新作" and embs[-1]["description"].startswith
 common.STATE_DIR = TMP
 print("✅ local events")
 
+# ---------- 受付中・開催中のまとめ（news.local.summary） ----------
+D = dt.date(2026, 11, 4)   # 水曜
+REC = lambda **k: {"kind": "event", "name": k.get("name", "x"), "place": "", "note": "", "link": "https://l/",
+                   "site": "s", "date": "", "date_end": "", "deadline": "", "entry_start": "", "found": "2026-11-01", **k}
+SUM_ITEMS = [REC(kind="entry", name="締切後", deadline="2026-11-03"), REC(kind="entry", name="締切前", deadline="2026-11-10"),
+             REC(kind="entry", name="締切不明"), REC(name="終わった", date="2026-11-01"),
+             REC(name="開催中", date="2026-11-01", date_end="2026-11-08"), REC(name="土曜", date="2026-11-07"),
+             REC(name="来週", date="2026-11-14"), REC(name="日付なし"), REC(kind="opening", name="お店")]
+secs = dict(local_events.summary_sections(SUM_ITEMS, D))
+names = {k.split()[0]: [r["name"] for r in v] for k, v in secs.items()}
+assert names["✍️"] == ["締切前", "締切不明"] and names["🎪"] == ["開催中"] and names["🗓️"] == ["土曜", "来週"]
+assert names["❔"] == ["日付なし"]                                           # 終わったもの・お店は入れない
+assert local_events.weekend_mark(SUM_ITEMS[5], D) == "⭐" and local_events.weekend_mark(SUM_ITEMS[6], D) == ""
+assert local_events.weekend_mark(SUM_ITEMS[4], D) == "⭐"                     # 期間中に土日を含む
+SUMMARY_DEL, SUMMARY_POST = [], []
+orig = (local_events.delete_channel_message, local_events.post_channel)
+local_events.delete_channel_message = lambda w, mid: SUMMARY_DEL.append(mid) or True
+local_events.post_channel = lambda w, **k: SUMMARY_POST.append(k) or k["ids"].extend(["m3", "m4"])
+common.STATE_DIR = TMP / "sum"
+common.save_state(local_events.STATE, {"items": SUM_ITEMS, "summary_ids": ["m1", "m2"]})
+os.environ.pop("DRY_RUN", None)
+os.environ["DISCORD_LOCAL_CHANNEL_ID"] = "123"
+local_events.post_summary({"local": {"summary": {"enabled": True}}}, today=D)
+assert SUMMARY_DEL == ["m1", "m2"] and common.load_state(local_events.STATE)["summary_ids"] == ["m3", "m4"]   # 前の回は消す
+desc = "".join(e["description"] for e in SUMMARY_POST[0]["embeds"])
+assert "- ⭐**土曜**\n  - 開催 11/7(土)\n  - [s](https://l/)" in desc    # 名前の下に字下げして内容
+assert "- **締切前**\n  - 受付 11/10(火) 締切" in desc
+os.environ["DRY_RUN"] = "1"
+os.environ.pop("DISCORD_LOCAL_CHANNEL_ID")
+local_events.delete_channel_message, local_events.post_channel = orig
+common.STATE_DIR = TMP
+print("✅ local summary")
+
 # ---------- note_weekly：テーマ別トピック・組み立て・機械チェック ----------
 import note_weekly  # noqa: E402
 
