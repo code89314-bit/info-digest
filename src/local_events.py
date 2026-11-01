@@ -17,7 +17,8 @@ from ai_digest import CHAT, LLMError, fetch_rss, ja_fix, llm_settings, strip_thi
 from common import delete_channel_message, load_state, post_channel, save_state
 
 STATE = "local_events"
-KINDS = {"entry": "✍️ 申込・エントリーが必要", "event": "🎪 イベント", "opening": "🍽️ 新しいお店・施設"}
+KINDS = {"entry": "✍️ 申込・エントリーが必要", "event": "🎪 イベント", "opening": "🍽️ 新しいお店・施設",
+         "campaign": "💰 キャッシュレスの還元・キャンペーン"}
 
 PROMPT = """あなたは地域情報の編集者です。読者: {audience}
 対象の地域: {area}
@@ -27,9 +28,12 @@ PROMPT = """あなたは地域情報の編集者です。読者: {audience}
   見出しに「申込」「予約」「抽選」「エントリー」「応募」「募集」などの言葉があるものだけ。無ければ event か opening にする
 - event: 対象の地域で開かれるイベント（祭り・展示・公開・体験・マルシェなど）
 - opening: 対象の地域に新しく開店・開業する（した）お店・施設
+- campaign: コード決済（PayPay・楽天ペイ・teppay・d払い・au PAY など）のポイント還元・キャッシュバックのキャンペーン。
+  全国で使えるものと、対象の地域の市で使えるもの（他の市町村だけのものは選ばない）。
+  date に開始日、date_end に終了日、note に還元率・上限・エントリーが要るか（見出しにあることだけ）
 {extra}
 選ばないもの: {exclude}
-対象の地域の外の出来事は選ばない（例外: 地域を問わない全国のものは、上で「全国でも」と書いたものだけ）。
+対象の地域の外の出来事は選ばない（例外: campaign と、上で「全国でも」と書いたもの）。
 
 すでに知らせたもの（同じ出来事なら選ばない）:
 {known}
@@ -43,9 +47,9 @@ PROMPT = """あなたは地域情報の編集者です。読者: {audience}
 - note: 補足（1文。見出しにあることだけ。「要申込」「先着」「無料」など）
 - ref: 根拠の見出し番号
 日付を推測で埋めない。曜日は書かない（こちらで付ける）。最大{max_items}件。
-選ぶ順: entry をすべて → 開催日の近い event → opening（開店日が近いもの・最近のもの）。
+選ぶ順: entry をすべて → 開催日の近い event → campaign → opening（開店日が近いもの・最近のもの）。
 
-JSONのみ: {{"items": [{{"kind": "entry|event|opening", "name": "...", "place": "...", "date": "", "date_end": "",
+JSONのみ: {{"items": [{{"kind": "entry|event|opening|campaign", "name": "...", "place": "...", "date": "", "date_end": "",
 "deadline": "", "entry_start": "", "note": "...", "ref": 0}}]}}
 
 【見出し】
@@ -162,7 +166,7 @@ def collect(lc: dict) -> list[dict]:
     out, keys = [], set()
     for src in lc.get("sources") or []:
         try:
-            got = fetch_rss(src, since)
+            got = fetch_rss(src, since)[: int(src.get("max_items") or 10**6)]   # 見出しの多い検索は件数を絞る
         except Exception as ex:   # noqa: BLE001
             print(f"⚠ {src['name']} 取得失敗: {ex}")
             continue
@@ -278,6 +282,8 @@ def line(rec: dict) -> str:
         parts.append(f"締切 {fmt_day(dl)}")
     if d0 and d0 not in (st, dl):
         parts.append(fmt_day(d0) + (f"〜{fmt_day(d1)}" if d1 and d1 != d0 else ""))
+    elif d1 and not d0:   # 終わりの日だけ分かる（還元キャンペーンなど）
+        parts.append(f"〜{fmt_day(d1)}")
     when = f"【{' / '.join(parts)}】" if parts else ""
     place = f"＠{rec['place']}" if rec.get("place") else ""
     note = f"（{rec['note']}）" if rec.get("note") else ""
@@ -290,7 +296,8 @@ def soon(items: list[dict], today: dt.date, days: int) -> list[tuple[dt.date, st
     """締切・受付開始・開催日が今日から days 日以内のもの（覚えているものから）。"""
     out = []
     for r in items:
-        for key, label in (("entry_start", "受付開始"), ("deadline", "締切"), ("date", "開催")):
+        keys = (("date", "開始"), ("date_end", "終了")) if r["kind"] == "campaign" else             (("entry_start", "受付開始"), ("deadline", "締切"), ("date", "開催"))
+        for key, label in keys:
             d = _d(r, key)
             if d and 0 <= (d - today).days <= days:
                 out.append((d, label, r))
@@ -314,7 +321,7 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
         new += remember(extract(part, known + [r["name"] for r in new], lc, cfg), part, state, today)
     # 載せるのは分類ごとに max_per_kind 件まで（必ず見るサイトのものは全部、先頭に）。
     # あふれたものも覚えておき、日付が近づいたら「⏰ もうすぐ」に出る
-    caps = {"entry": 10, "event": 10, "opening": 8, **(lc.get("max_per_kind") or {})}
+    caps = {"entry": 10, "event": 10, "opening": 8, "campaign": 10, **(lc.get("max_per_kind") or {})}
     new = [r for k in KINDS for r in prioritize([r for r in must if r["kind"] == k], today)
            + prioritize([r for r in new if r["kind"] == k], today)[: int(caps[k])]]
     # 終わったもの（締切も開催日も過ぎた・30日より前に見つけて日付の無いもの）は忘れる
@@ -360,8 +367,12 @@ def summary_sections(items: list[dict], today: dt.date) -> list[tuple[str, list[
     now = sorted([r for r in events if _d(r, "date") <= today], key=end)
     later = sorted([r for r in events if _d(r, "date") > today], key=lambda r: _d(r, "date"))
     undated = [r for r in items if r["kind"] == "event" and not end(r)]
+    # 還元キャンペーン: 終わっていないもの（終了日の近い順。終了日が分からないものは後ろ）
+    camps = sorted([r for r in items if r["kind"] == "campaign" and (not end(r) or end(r) >= today)],
+                   key=lambda r: (end(r) is None, end(r) or today))
     return [("✍️ 申込を受付中・受付予定（締切の近い順）", entries), ("🎪 開催中（終わる日の近い順）", now),
-            ("🗓️ これから開催（開催日の近い順）", later), ("❔ 日付の分からないイベント", undated)]
+            ("🗓️ これから開催（開催日の近い順）", later), ("❔ 日付の分からないイベント", undated),
+            ("💰 キャッシュレスの還元・キャンペーン（終わる日の近い順）", camps)]
 
 
 def weekend_mark(r: dict, today: dt.date) -> str:
@@ -384,7 +395,10 @@ def summary_line(r: dict, today: dt.date) -> str:
     if st or dl:
         rows.append("  - 受付 " + (f"{fmt_day(st)}〜" if st else "") + (f"{fmt_day(dl)} 締切" if dl else ""))
     if d0 and d0 not in (st, dl):
-        rows.append(f"  - 開催 {fmt_day(d0)}" + (f"〜{fmt_day(d1)}" if d1 and d1 != d0 else ""))
+        rows.append(("  - 期間 " if r["kind"] == "campaign" else "  - 開催 ") + fmt_day(d0)
+                    + (f"〜{fmt_day(d1)}" if d1 and d1 != d0 else ""))
+    elif d1 and r["kind"] == "campaign":
+        rows.append(f"  - 期間 〜{fmt_day(d1)}")
     if r.get("place"):
         rows.append(f"  - 場所 {r['place']}")
     if r.get("note"):
