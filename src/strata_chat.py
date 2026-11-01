@@ -597,6 +597,10 @@ WRITING_RULES = """
 - 小説を書く・直すとき: 1行目に「【小説】」とだけ書き、次の行に『タイトル』、1行空けて本文。
   書き直しは、直したところだけでなく全文を書く。続きは、前の本文をくり返さずに続きの部分だけを書く。
   前置き・あとがき・解説・作者としてのコメントは書かない。長さは指定が無ければおよそ {chars} 字。
+- 本文を書き終えたら、1行空けて「【次の展開】」とだけ書き、次の行から「1. 」〜「4. 」で、この続きの案を4つ書く
+  （本文とは別に相手へ見せる。本文の中には提案・選択肢を書かない）。
+  いま書いた終わりの場面と登場人物の気持ちから自然に続き、相手が続きを読みたくなる案にする。4つは互いに違う方向にし、
+  前に出した提案（会話の中の「（次の展開の提案）」）はくり返さない。1つ40字程度で具体的に（誰が・どこで・何をする）。
 - 小説を書かずに答えるとき（質問・相談・感想への返事）: キャラクターの口調で短く（200字程度）。【小説】は書かない。
 - 下の「小説の作法」は必ず守る。書いた小説（会話の中の【小説】）は自分が書いたものなので、内容を覚えていて、それをもとに直す。
 - 書き手はあなただが、あなた自身（キャラクター）は、頼まれない限り登場人物にしない。
@@ -688,11 +692,44 @@ def end_writing(pid: str) -> None:
 
 
 OMIT_MARK = re.compile(r"(\s*[（(]以下(略|省略)[）)])+\s*$")   # 本文の末尾に付いてしまった「（以下略）」
+# 次の展開の提案は、本文と同じ回で【次の展開】のあとに書かせて、本文から切り分ける。
+# 別に頼んで作らせた提案は、話の流れをつかめずに同じ仕掛けのくり返しになったが、本文の勢いのまま書いた提案は自然だった（2026-11-01）
+NEXT_HEAD = "【次の展開】"
+# 【次の展開】を書かずに「💡 次はどうする？ 1. …」と書いたとき。見出しの行のすぐ次が「1.」のときだけ（本文中の「次はどうしよう」は切らない）
+NEXT_MARK = re.compile(r"\n[\s\-─―*_]*\n?[^\n]*(💡|次はどうする|次の展開)[^\n]*\n\s*\**\s*[1１][.．)）].*$", re.S)
+NEXT_ITEM = re.compile(r"^\s*\**\s*(?:[1-4１-４]\s*[.．)）]\s*\**\s*)+(.+)$")
+
+
+def split_next(body: str) -> tuple[str, list[str]]:
+    """本文と、末尾の「次の展開の提案」（最大4つ）に分ける。"""
+    if NEXT_HEAD in body:
+        body, tail = body.split(NEXT_HEAD, 1)
+    else:
+        m = NEXT_MARK.search(body)
+        body, tail = (body[:m.start()], m.group(0)) if m else (body, "")
+    sugg = []
+    for ln in tail.splitlines():
+        m = NEXT_ITEM.match(ln)
+        s = " ".join(m.group(1).replace("**", "").split()) if m else ""
+        if s and "自由に" not in s:   # 「自分で自由に指定する」は案に数えない（返事の文で自由に書けると伝える）
+            sugg.append(s[:80])
+    return body.rstrip(), sugg[:4]
+
+
+def cut_next(body: str) -> str:
+    """本文の末尾の「次の展開の提案」を切る。"""
+    return split_next(body)[0]
+
+
+def offer(st: dict, sugg: list[str]) -> None:
+    """出した提案を執筆の状態に残す（番号で選べるように。次の提案でくり返さないように）。"""
+    st["suggestions"] = sugg
+    st["turns"].append({"role": "assistant", "content": "（次の展開の提案）\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(sugg, 1))})
 
 
 def _novel_text(path: str) -> str:
     p = Path(path)
-    return OMIT_MARK.sub("", p.read_text(encoding="utf-8")) if p.exists() else ""
+    return cut_next(OMIT_MARK.sub("", p.read_text(encoding="utf-8"))) if p.exists() else ""
 
 
 # 提案が、相手がすでに頼んだことをなぞるだけで新しさが無かったので、頼まれたこと・出した提案は「もう出たもの」として渡して避けさせる（2026-10-29）
@@ -721,7 +758,8 @@ SUGGEST_PICK = re.compile(r"^\s*([1-4１-４])\s*(番|で|でお願い|がいい
 
 
 def suggest_next(cfg: dict) -> list[str]:
-    """小説を書いたあとの、次の展開の提案4つ（Gemma）。執筆の記録にも残し、番号で選べるようにする。"""
+    """小説を書いたあとの、次の展開の提案4つ（Gemma）。執筆の記録にも残し、番号で選べるようにする。
+    ふだんは本文と同じ回で書かせた【次の展開】を使う。これは Gemma がそれを書かなかったときの予備。"""
     persona = novel_persona(cfg)
     st = writing_state(persona["id"])
     novels = [t["novel"] for t in st.get("turns") or [] if t.get("novel")]
@@ -737,8 +775,7 @@ def suggest_next(cfg: dict) -> list[str]:
                                          tail=_novel_text(novels[-1])[-2500:]), cfg, persona, 800)
     sugg = [" ".join(str(s).split())[:80] for s in got.get("suggestions") or [] if str(s).strip()][:4]
     if sugg:
-        st["suggestions"] = sugg
-        st["turns"].append({"role": "assistant", "content": "（次の展開の提案）\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(sugg, 1))})
+        offer(st, sugg)
         save_writing(persona["id"], st)
     return sugg
 
@@ -936,7 +973,8 @@ def writing_turn(text: str, images: list[str], cfg: dict) -> dict:
             out = SKILL_TAG.sub("", chat(msgs, {**opts, "temperature": min(temperature, 0.7)})).strip()
     st["turns"] = (st.get("turns") or []) + [{"role": "user", "content": (text or "（画像）")[:2000]}]
     if NOVEL_HEAD in out:   # Gemma は「書き始めるね！」などの前置きのあとに【小説】を書くことがある（前置きは捨てる）
-        body = OMIT_MARK.sub("", cut_loop(out.split(NOVEL_HEAD, 1)[1].strip()))
+        body, sugg = split_next(cut_loop(out.split(NOVEL_HEAD, 1)[1].strip()))
+        body = OMIT_MARK.sub("", body)
         if persona.get("line_dict"):   # ルナだけ。タグが残ってしまったときの保険（ふだんは line_examples の例で書かせる）
             body = fill_lines(body)
         first = body.splitlines()[0].strip() if body else ""
@@ -944,7 +982,9 @@ def writing_turn(text: str, images: list[str], cfg: dict) -> dict:
         path = novel_dir() / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{persona['id']}.txt"
         path.write_text(body, encoding="utf-8")
         st["turns"].append({"role": "assistant", "novel": str(path), "title": title})
-        res = {"kind": "novel", "text": body, "title": title, "path": path}
+        if sugg:
+            offer(st, sugg)
+        res = {"kind": "novel", "text": body, "title": title, "path": path, "suggestions": sugg}
     else:
         reply_text = cut_loop(out) or "（うまく返事を作れませんでした。もう一度送ってください）"
         st["turns"].append({"role": "assistant", "content": reply_text[:2000]})
