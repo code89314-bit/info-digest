@@ -804,6 +804,7 @@ strata_chat:
   # ルナ（Gemma 4 26B、llama.cpp :8090）に GPU を貸すときの決まり（src/gpu_mode.py）
   luna:
     idle_minutes: 20           # これだけ話さなければ Strata（しらべ）に戻す
+    writing_thread: true       # 執筆モードは小説ごとにスレッドを作ってその中で（もとのチャンネルはいつものおしゃべり）
     draw_idle_minutes: 30      # お絵描きモード（ComfyUI）で、ComfyUI が動かず発言もないままこれだけ経てば Gemma に戻す
     guard_before_minutes: 15   # 定時の配信の何分前から貸さないか
     # 定時の配信（Windows のタスク）。この前後はルナ・ComfyUI に切り替えない（minutes = 配信にかかる目安）

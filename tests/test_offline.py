@@ -1022,6 +1022,10 @@ assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 9, 0), used=2) == 1
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9, 0), used=2) == 0   # 水曜は水曜号の分
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
+# 執筆のスレッドの名前: 持ち込んだ会話の最後の行（話した人の名前は外す）
+tn = qa_bot.QABot.thread_name("ルナ: どんな話？\nあなた: 夜の学校で二人きりの話を書いて")
+assert tn.startswith("✍️ ") and tn.endswith(" 夜の学校で二人きりの話を書いて")
+assert qa_bot.QABot.thread_name("").endswith(" 執筆") and len(qa_bot.QABot.thread_name("あ" * 200)) < 60
 print("✅ qa_deep")
 
 # ---------- 薬の名前を言い換えさせない（ギモン深堀りの検索語・しらべの NotebookLM） ----------

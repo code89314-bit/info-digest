@@ -237,8 +237,9 @@ class QABot(discord.Client):
             return False
         orig = pend["msg"]
         if pend["kind"] == "enter_writing":
-            if yes and await self.enter_writing(orig, persona, ccfg, pend["request"]):
-                await self.writing(orig, persona, ccfg)
+            ch = await self.enter_writing(orig, persona, ccfg, pend["request"]) if yes else None
+            if ch:
+                await self.writing(orig, persona, ccfg, ch)
             elif no:
                 await self.chat_send(msg, "わかった、じゃあ今はおしゃべりしてよ💛")
         elif pend["kind"] == "leave_writing":
@@ -416,14 +417,18 @@ class QABot(discord.Client):
     async def writing_mode(self, msg: discord.Message, persona: dict, ccfg: dict) -> bool:
         """執筆モードの入口。執筆モードで答えたら True（ふだんの会話＝Strata に回すなら False）。"""
         text = msg.content.strip()
-        if strata_chat.writing_state(persona["id"]).get("active"):
+        st = strata_chat.writing_state(persona["id"])
+        # 執筆はスレッドの中（writing_thread）。執筆中でも、もとのチャンネル（スレッドの外）ではいつもの会話
+        in_other = st.get("active") and st.get("thread") and msg.channel.id != st["thread"]
+        if st.get("active") and not in_other:
             if WRITING_EXIT.search(text):   # はっきり「やめて」と言われたら、そのまま抜ける
                 await self.end_writing(persona, msg.channel)
                 return False   # 抜けたあと、いつものルナ（Gemma のまま）としてこの発言に答える
             if NEW_STORY.search(text):      # 別の小説・キャラ変更: 前の小説は忘れて、打ち合わせ（キャラ・シチュエーションの問答）から
                 strata_chat.restart_writing(text, ccfg)
-                await msg.channel.send("-# 🔄 新しい小説だね。前の話はいったん置いて、キャラとシチュエーションの確認から始めるよ")
-                await self.writing(msg, persona, ccfg)
+                ch = await self.open_thread(msg, persona, ccfg, text)   # 新しい小説は新しいスレッドで
+                await ch.send("-# 🔄 新しい小説だね。前の話はいったん置いて、キャラとシチュエーションの確認から始めるよ")
+                await self.writing(msg, persona, ccfg, ch)
                 return True
             if WRITING_LEAVE.search(text):  # プロンプト・絵の話はふだんの会話・ComfyUI の担当。抜けるか確認してから
                 await self.ask_switch(msg, "leave_writing", "執筆モードを抜けて、いつものルナに戻る？"
@@ -443,18 +448,46 @@ class QABot(discord.Client):
         """執筆モードへ。もう Gemma で動いていれば、確かめずにすぐ入る（切り替えの待ちが無いので）。
         Strata のときだけ、切り替えに2〜3分かかるので確認してから。"""
         if gpu_mode.current() == "luna":
-            if await self.enter_writing(msg, persona, ccfg, request):
-                await self.writing(msg, persona, ccfg)
+            ch = await self.enter_writing(msg, persona, ccfg, request)
+            if ch:
+                await self.writing(msg, persona, ccfg, ch)
             return
         await self.ask_switch(msg, "enter_writing", "執筆モード（Gemma）に切り替えて書く？ 切り替えに2〜3分かかるよ",
                               request=request)
 
-    async def enter_writing(self, msg: discord.Message, persona: dict, ccfg: dict, request: str) -> bool:
-        """GPU を Gemma に切り替え、依頼の作品・キャラを下調べして執筆モードに入る。入れなければ False。"""
+    async def open_thread(self, msg: discord.Message, persona: dict, ccfg: dict, title: str):
+        """執筆用のスレッドを作って、執筆の状態に覚える（config の strata_chat.luna.writing_thread）。
+        作らない設定・作れない（権限が無い）・スレッドの中から頼まれたときは、いまのチャンネルを返す。"""
+        ch = msg.channel
+        if not (ccfg.get("luna") or {}).get("writing_thread", True):
+            return ch
+        try:
+            if isinstance(ch, discord.Thread):   # スレッドの中からの新しい小説は、もとのチャンネルに別のスレッドを作る
+                ch = await ch.parent.create_thread(name=self.thread_name(title), type=discord.ChannelType.public_thread,
+                                                   auto_archive_duration=1440)
+            else:
+                ch = await msg.create_thread(name=self.thread_name(title), auto_archive_duration=1440)
+        except (discord.HTTPException, AttributeError) as ex:
+            log.warning("thread: %s", ex)
+            return msg.channel
+        st = strata_chat.writing_state(persona["id"])
+        if st.get("active"):
+            strata_chat.save_writing(persona["id"], {**st, "thread": ch.id})
+        return ch
+
+    @staticmethod
+    def thread_name(text: str) -> str:
+        line = re.sub(r"\s+", " ", text.strip().splitlines()[-1] if text.strip() else "")
+        line = re.sub(r"^[^:：]{1,20}[:：]\s*", "", line)   # 「名前: 」を外す（持ち込んだ会話の最後の行）
+        return f"✍️ {dt.datetime.now():%m/%d} {line[:40] or '執筆'}"
+
+    async def enter_writing(self, msg: discord.Message, persona: dict, ccfg: dict, request: str):
+        """GPU を Gemma に切り替え、依頼の作品・キャラを下調べして執筆モードに入る。
+        返り値: 執筆を続けるチャンネル（ふつうは新しいスレッド）。入れなければ None。"""
         blocked = gpu_mode.blocked_reason(ccfg)
         if blocked:
             await msg.channel.send(f"-# いまは{blocked}なので、執筆モード（Gemma）には入れません。Strata のまま書きます")
-            return False
+            return None
         switch = gpu_mode.current() != "luna"
         note = await msg.channel.send("-# ✍️ 執筆モードに入ります（Gemma に切り替え中、2〜3分）…" if switch
                                       else "-# ✍️ 執筆モードに入ります（出てくる作品・キャラを確かめています）…")
@@ -469,46 +502,51 @@ class QABot(discord.Client):
         finally:
             await note.delete()
         await self.set_nick(msg.channel, persona, "執筆中")
+        ch = await self.open_thread(msg, persona, ccfg, msg.content)
+        if ch is not msg.channel:
+            await msg.channel.send(f"-# ✍️ 執筆はスレッド {ch.mention} で続けるね（ここではいつものおしゃべり）")
         if st.get("studied"):
-            await msg.channel.send("-# 📚 下調べ: " + " / ".join(st["studied"]))
+            await ch.send("-# 📚 下調べ: " + " / ".join(st["studied"]))
         self.last_chat = time.monotonic()
-        return True
+        return ch
 
-    async def writing(self, msg: discord.Message, persona: dict, ccfg: dict) -> None:
-        """執筆モードの1往復（Gemma）。小説なら本文とファイル、相談なら返事。そのあと記憶（作法など）を Gemma で更新。"""
+    async def writing(self, msg: discord.Message, persona: dict, ccfg: dict, ch=None) -> None:
+        """執筆モードの1往復（Gemma）。小説なら本文とファイル、相談なら返事。そのあと記憶（作法など）を Gemma で更新。
+        ch: 返事を出すところ（執筆のスレッド）。無ければ、執筆のスレッドがあればそこ、無ければ msg のチャンネル。"""
+        ch = ch or self.writing_channel(msg, persona)
         if gpu_mode.current() != "luna":   # 配信・ギモン深堀りに GPU を返したあと
             try:
-                note = await msg.channel.send("-# ⏳ Gemma に戻しています（2〜3分）…")
+                note = await ch.send("-# ⏳ Gemma に戻しています（2〜3分）…")
                 await asyncio.to_thread(gpu_mode.to_luna, ccfg)
                 await note.delete()
             except gpu_mode.Busy as ex:
-                await self.end_writing(persona, msg.channel, to_strata=True)
-                await msg.channel.send(f"-# いまは{ex}なので、執筆モードを終えたよ。終わってからもう一度頼んでね")
+                await self.end_writing(persona, ch, to_strata=True)
+                await ch.send(f"-# いまは{ex}なので、執筆モードを終えたよ。終わってからもう一度頼んでね")
                 return
         images = [await image_data_uri(a) for a in image_attachments(msg)[:3]] if persona.get("vision") else []
-        async with msg.channel.typing():
+        async with ch.typing():
             res = await asyncio.to_thread(strata_chat.writing_turn, msg.content.strip(), [u for u in images if u], ccfg)
         if res.get("studied"):
-            await msg.channel.send("-# 📚 下調べ: " + " / ".join(res["studied"]))
+            await ch.send("-# 📚 下調べ: " + " / ".join(res["studied"]))
         if res["kind"] == "novel":
             await self.chat_send(msg, f"{NOVEL_MARK}『{res['title']}』\n\n" + res["text"].split("\n", 1)[-1].strip(),
-                                 file=res["path"])
+                                 file=res["path"], ch=ch)
             try:   # 次の展開の提案4つ（番号か自由回答で答えてもらう）
-                async with msg.channel.typing():
+                async with ch.typing():
                     sugg = await asyncio.to_thread(strata_chat.suggest_next, ccfg)
                 if sugg:
                     await self.chat_send(msg, "💡 次はどうする？ 番号か、自由に教えてね\n"
-                                         + "\n".join(f"**{i}.** {s}" for i, s in enumerate(sugg, 1)))
+                                         + "\n".join(f"**{i}.** {s}" for i, s in enumerate(sugg, 1)), ch=ch)
             except Exception:   # noqa: BLE001
                 log.error("suggest: %s", traceback.format_exc())
         else:
-            await self.chat_send(msg, res["text"])
+            await self.chat_send(msg, res["text"], ch=ch)
         self.last_chat = time.monotonic()
         try:
             hist = [{"role": "user", "content": msg.content}, {"role": "assistant", "content": res["text"][:1500]}]
             added = await asyncio.to_thread(strata_chat.update_memory, strata_chat.novel_persona(ccfg), hist, ccfg)
             if added and ccfg.get("memory", {}).get("announce", True):
-                await msg.channel.send("-# 🧠 覚えたこと: " + " / ".join(a[:40] for a in added)[:1800])
+                await ch.send("-# 🧠 覚えたこと: " + " / ".join(a[:40] for a in added)[:1800])
         except Exception:   # noqa: BLE001
             log.error("memory: %s", traceback.format_exc())
 
@@ -868,7 +906,18 @@ class QABot(discord.Client):
                 log.error("idle: %s", traceback.format_exc())
 
     def luna_writing_channel(self):
-        return self.luna_bot.get_channel(self.luna_channel_id) if self.luna_bot and self.luna_channel_id else None
+        """ルナの執筆・お絵描きの知らせを出すところ（執筆のスレッドがあればそこ、無ければルナのチャンネル）。"""
+        if not (self.luna_bot and self.luna_channel_id):
+            return None
+        thread = strata_chat.writing_state("luna").get("thread")
+        return (self.luna_bot.get_channel(thread) if thread else None) or self.luna_bot.get_channel(self.luna_channel_id)
+
+    def writing_channel(self, msg: discord.Message, persona: dict):
+        """執筆の返事を出すところ: 執筆のスレッド（msg を受けた Bot から見えるもの）か、msg のチャンネル。"""
+        thread = strata_chat.writing_state(persona["id"]).get("thread")
+        if thread and thread != msg.channel.id and msg.guild:
+            return msg.guild.get_thread(thread) or msg.channel
+        return msg.channel
 
     async def memory_cmd(self, msg: discord.Message, ccfg: dict, forget: bool) -> None:
         """「!記憶」で覚えている嗜好の一覧、「!忘れて 3 5」で番号の項目を消す。"""
@@ -928,18 +977,22 @@ class QABot(discord.Client):
             self.last_chat = time.monotonic()
         await self.chat_send(msg, p.get("greeting") or f"{p['name']}に切り替えました。")
 
-    async def chat_send(self, msg: discord.Message, text: str, file=None) -> None:
+    async def chat_send(self, msg: discord.Message, text: str, file=None, ch=None) -> None:
         """ペルソナの名前・アイコンで（.env の DISCORD_CHAT_WEBHOOK_URL があれば Webhook、無ければ Bot の返信）。
-        小説（NOVEL_MARK で始まる）は、分割した2通目以降にも印を付ける（履歴で読み飛ばすため）。file は最後の1通に添付。"""
+        小説（NOVEL_MARK で始まる）は、分割した2通目以降にも印を付ける（履歴で読み飛ばすため）。file は最後の1通に添付。
+        ch: msg と別のところ（執筆のスレッド）に出すとき。返信の形にはせず、そこに投稿する。"""
         # Webhook はしらべのトークチャンネル用。ルナ専用チャンネルは LunaBot 自身（msg を受けた Bot）の名前で返す
         url = os.environ.get("DISCORD_CHAT_WEBHOOK_URL") if msg.channel.id == self.chat_channel_id else None
+        elsewhere = ch is not None and ch.id != msg.channel.id
         persona = strata_chat.load_persona(strata_chat.section_config())
         parts = chunks(text)
         if text.startswith(NOVEL_MARK):
             parts = [parts[0]] + [NOVEL_MARK + p for p in parts[1:]]
         for i, part in enumerate(parts):
             kw = {"file": discord.File(file)} if file and i == len(parts) - 1 else {}
-            if url:
+            if elsewhere:
+                await ch.send(part, **kw)
+            elif url:
                 await discord.Webhook.from_url(url, client=self).send(
                     part, username=persona.get("name") or "Strata", avatar_url=persona.get("avatar_url") or None, **kw)
             elif i == 0:
@@ -1072,7 +1125,9 @@ class LunaBot(discord.Client):
         log.info("luna ready: %s / channel %s / owners %s", self.user, self.channel_id, self.owners)
 
     async def on_message(self, msg: discord.Message) -> None:
-        if msg.author.bot or msg.channel.id != self.channel_id or msg.author.id not in self.owners:
+        # ルナのチャンネルと、その中のスレッド（執筆のスレッド）
+        here = msg.channel.id == self.channel_id or getattr(msg.channel, "parent_id", None) == self.channel_id
+        if msg.author.bot or not here or msg.author.id not in self.owners:
             return
         asyncio.create_task(self.main.chat(msg, persona_id="luna"))
 
