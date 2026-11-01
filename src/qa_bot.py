@@ -236,19 +236,7 @@ class QABot(discord.Client):
         if not yes and not no:
             return False
         orig = pend["msg"]
-        if pend["kind"] == "enter_writing":
-            ch = await self.enter_writing(orig, persona, ccfg, pend["request"]) if yes else None
-            if ch:
-                await self.writing(orig, persona, ccfg, ch)
-            elif no:
-                await self.chat_send(msg, "わかった、じゃあ今はおしゃべりしてよ💛")
-        elif pend["kind"] == "leave_writing":
-            if yes:
-                await self.end_writing(persona, msg.channel)
-                await self.strata_turn(orig, persona, ccfg)   # 抜けたあと、元の発言にいつものルナ（Strata）として答える
-            else:
-                await self.writing(orig, persona, ccfg)       # 執筆の注文として受ける
-        elif pend["kind"] == "draw":
+        if pend["kind"] == "draw":
             if yes:
                 await self.draw(orig, persona, pend["path"], pend["arg"], ccfg)
             else:
@@ -296,7 +284,7 @@ class QABot(discord.Client):
                 await self.chat_send(msg, text)
                 history.append({"role": "assistant", "name": "アシスタント", "content": res["text"]})
             elif first["skill"] == "novel":
-                # 執筆モード（Gemma）に入って書く（切り替えが要るときは確認してから）。配信の時間帯などで入れなければ、Strata で1本だけ書く
+                # 執筆モード（Gemma）に入って書く（確かめずにすぐ）。配信の時間帯などで入れなければ、Strata で1本だけ書く
                 if persona.get("novel_gpu") and not gpu_mode.blocked_reason(ccfg):
                     await self.start_writing(msg, persona, ccfg, first["arg"] + "\n\n（相手の依頼）" + msg.content)
                     return
@@ -430,10 +418,9 @@ class QABot(discord.Client):
                 await ch.send("-# 🔄 新しい小説だね。前の話はいったん置いて、キャラとシチュエーションの確認から始めるよ")
                 await self.writing(msg, persona, ccfg, ch)
                 return True
-            if WRITING_LEAVE.search(text):  # プロンプト・絵の話はふだんの会話・ComfyUI の担当。抜けるか確認してから
-                await self.ask_switch(msg, "leave_writing", "執筆モードを抜けて、いつものルナに戻る？"
-                                      "「いいえ」なら執筆の注文として受けるね")
-                return True
+            if WRITING_LEAVE.search(text):  # プロンプト・絵の話はふだんの会話・ComfyUI の担当。確かめずにそのまま抜ける
+                await self.end_writing(persona, msg.channel)
+                return False   # いつものルナ（Gemma のまま）としてこの発言に答える
             await self.writing(msg, persona, ccfg)
             return True
         if WRITING_ENTER.search(text) and not WRITING_EXIT.search(text) and not gpu_mode.blocked_reason(ccfg):
@@ -445,15 +432,10 @@ class QABot(discord.Client):
         return False   # 配信の時間帯などで Gemma に切り替えられないときは、Strata が受ける（1本だけ書く）
 
     async def start_writing(self, msg: discord.Message, persona: dict, ccfg: dict, request: str) -> None:
-        """執筆モードへ。もう Gemma で動いていれば、確かめずにすぐ入る（切り替えの待ちが無いので）。
-        Strata のときだけ、切り替えに2〜3分かかるので確認してから。"""
-        if gpu_mode.current() == "luna":
-            ch = await self.enter_writing(msg, persona, ccfg, request)
-            if ch:
-                await self.writing(msg, persona, ccfg, ch)
-            return
-        await self.ask_switch(msg, "enter_writing", "執筆モード（Gemma）に切り替えて書く？ 切り替えに2〜3分かかるよ",
-                              request=request)
+        """執筆モードへ。確かめずにすぐ入る（ルナはふだんも Gemma。Strata に戻っていたら、入るときに Gemma に切り替える）。"""
+        ch = await self.enter_writing(msg, persona, ccfg, request)
+        if ch:
+            await self.writing(msg, persona, ccfg, ch)
 
     async def open_thread(self, msg: discord.Message, persona: dict, ccfg: dict, title: str):
         """執筆用のスレッドを作って、執筆の状態に覚える（config の strata_chat.luna.writing_thread）。
@@ -555,10 +537,8 @@ class QABot(discord.Client):
         GPU はふつう Gemma のまま（ルナのふだんの会話も Gemma）。to_strata: 無言・配信・ギモン深堀りのときは Strata に戻す。"""
         strata_chat.end_writing(persona["id"])
         await self.set_nick(channel, persona, None)
-        if to_strata and gpu_mode.held_by_bot():
-            note = await channel.send("-# ⏳ 執筆モードを終えて、Strata に戻しています（2〜3分）…")
+        if to_strata and gpu_mode.held_by_bot():   # 裏で戻す（チャンネルには出さない）
             await asyncio.to_thread(gpu_mode.to_llm)
-            await note.delete()
         self.last_chat = time.monotonic()
 
     async def set_nick(self, channel, persona: dict, label: str | None) -> None:
@@ -892,8 +872,8 @@ class QABot(discord.Client):
                 elif st.get("active") and time.time() - st.get("last", 0) > idle and not self.chat_lock.locked():
                     ch = self.luna_writing_channel()
                     async with self.chat_lock:
-                        if ch:
-                            await self.end_writing(strata_chat.personas(ccfg)["luna"], ch, to_strata=True)
+                        if ch:   # Gemma のまま（さらに話さなければ、下の分で裏で Strata に戻る）
+                            await self.end_writing(strata_chat.personas(ccfg)["luna"], ch)
                             await ch.send(f"-# 💤 {idle // 60}分お話がなかったので、執筆モードを終えたよ")
                         else:
                             strata_chat.end_writing("luna")
