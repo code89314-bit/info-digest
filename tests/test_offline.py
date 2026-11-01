@@ -746,6 +746,13 @@ secs = dict(local_events.summary_sections(SUM_ITEMS, D))
 names = {k.split()[0]: [r["name"] for r in v] for k, v in secs.items()}
 assert names["✍️"] == ["締切前", "締切不明"] and names["🎪"] == ["開催中"] and names["🗓️"] == ["土曜", "来週"]
 assert names["❔"] == ["日付なし"]                                           # 終わったもの・お店は入れない
+CAMPS = [REC(kind="campaign", name="終了", date_end="2026-11-03"), REC(kind="campaign", name="月末まで", date_end="2026-11-30"),
+         REC(kind="campaign", name="来週から", date="2026-11-10", date_end="2026-11-20"), REC(kind="campaign", name="期間不明")]
+camp = dict(local_events.summary_sections(CAMPS, D))["💰 キャッシュレスの還元・キャンペーン（終わる日の近い順）"]
+assert [r["name"] for r in camp] == ["来週から", "月末まで", "期間不明"]
+assert "  - 期間 〜11/30(月)" in local_events.summary_line(CAMPS[1], D) and "【〜11/30(月)】" in local_events.line(CAMPS[1])
+assert [lab for _, lab, r in local_events.soon(CAMPS[1:3], D, 7)] == ["開始"]   # 始まりが近い（月末の終わりはまだ先）
+assert [lab for _, lab, r in local_events.soon(CAMPS[2:3], dt.date(2026, 11, 15), 7)] == ["終了"]
 assert local_events.weekend_mark(SUM_ITEMS[5], D) == "⭐" and local_events.weekend_mark(SUM_ITEMS[6], D) == ""
 assert local_events.weekend_mark(SUM_ITEMS[4], D) == "⭐"                     # 期間中に土日を含む
 SUMMARY_DEL, SUMMARY_POST = [], []
