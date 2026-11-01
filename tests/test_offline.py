@@ -1034,6 +1034,17 @@ import strata_chat  # noqa: E402
 assert strata_chat.kana_names("ソルデムとハンプの配合変化をガイドラインで") == ["ソルデム", "ハンプ"]
 assert strata_chat.search_queries("ミルリノン 配合変化", "ソルデムとハンプの配合変化")[0] == "ソルデム ハンプ 配合変化"
 
+# ルナの小説: 本文の末尾の「次はどうする？」の提案は切る。本文中の「次はどうしよう」は残す
+assert strata_chat.cut_next("本文の終わり。\n\n💡 **次はどうする？**\n**1.** 案A\n**2.** 案B") == "本文の終わり。"
+assert strata_chat.cut_next("本文\n---\n次の展開の提案\n1. 案A") == "本文"
+_t = "本文\n次はどうしようか、と彼女は考えた。\n続き"
+assert strata_chat.cut_next(_t) == _t
+# 本文と同じ回で書かせた【次の展開】を、本文と提案4つに分ける（「自由に指定」は数えない、「1. 1.」の重なりも外す）
+assert strata_chat.split_next("本文。\n\n【次の展開】\n1. 案A\n2. 2. 案B\n**3.** 案C\n4. 案D\n5. 案E") == \
+    ("本文。", ["案A", "案B", "案C", "案D"])
+assert strata_chat.split_next("本文。\n\n💡 **次はどうする？**\n**1.** 案A\n**2.** 自分で自由に指定する") == ("本文。", ["案A"])
+assert strata_chat.split_next("本文だけ。") == ("本文だけ。", [])
+
 
 def swap_strata(prompt, cfg):   # Strata が商品名を別の薬の一般名に言い換えた
     return {"title": "ミルリノンの配合変化", "points": ["配合変化は？"], "queries": ["ミルリノン 配合変化"],

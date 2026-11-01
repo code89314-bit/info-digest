@@ -513,9 +513,11 @@ class QABot(discord.Client):
         if res["kind"] == "novel":
             await self.chat_send(msg, f"{NOVEL_MARK}『{res['title']}』\n\n" + res["text"].split("\n", 1)[-1].strip(),
                                  file=res["path"], ch=ch)
-            try:   # 次の展開の提案4つ（番号か自由回答で答えてもらう）
-                async with ch.typing():
-                    sugg = await asyncio.to_thread(strata_chat.suggest_next, ccfg)
+            try:   # 次の展開の提案4つ（番号か自由回答で答えてもらう）。本文と一緒に書いたものが無いときだけ、別に作る
+                sugg = res.get("suggestions")
+                if not sugg:
+                    async with ch.typing():
+                        sugg = await asyncio.to_thread(strata_chat.suggest_next, ccfg)
                 if sugg:
                     await self.chat_send(msg, "💡 次はどうする？ 番号か、自由に教えてね\n"
                                          + "\n".join(f"**{i}.** {s}" for i, s in enumerate(sugg, 1)), ch=ch)
