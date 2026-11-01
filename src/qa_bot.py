@@ -295,10 +295,9 @@ class QABot(discord.Client):
                 await self.chat_send(msg, text)
                 history.append({"role": "assistant", "name": "アシスタント", "content": res["text"]})
             elif first["skill"] == "novel":
-                # 執筆モード（Gemma）に入って書く（確認してから）。配信の時間帯などで入れなければ、Strata で1本だけ書く
+                # 執筆モード（Gemma）に入って書く（切り替えが要るときは確認してから）。配信の時間帯などで入れなければ、Strata で1本だけ書く
                 if persona.get("novel_gpu") and not gpu_mode.blocked_reason(ccfg):
-                    await self.ask_switch(msg, "enter_writing", self.writing_question(),
-                                          request=first["arg"] + "\n\n（相手の依頼）" + msg.content)
+                    await self.start_writing(msg, persona, ccfg, first["arg"] + "\n\n（相手の依頼）" + msg.content)
                     return
                 async with msg.channel.typing():
                     nov = await asyncio.to_thread(strata_chat.write_novel, history, first["arg"], ccfg, False)
@@ -436,15 +435,19 @@ class QABot(discord.Client):
             # 入る前の直近5往復ほどを依頼として持ち込む（最後の行がこの発言）
             history = await self.chat_history(msg, ccfg)
             lines = [f"{h['name']}: {strata_chat.text_of(h['content'])[:600]}" for h in history[-11:]]
-            await self.ask_switch(msg, "enter_writing", self.writing_question(), request="\n".join(lines))
+            await self.start_writing(msg, persona, ccfg, "\n".join(lines))
             return True
         return False   # 配信の時間帯などで Gemma に切り替えられないときは、Strata が受ける（1本だけ書く）
 
-    @staticmethod
-    def writing_question() -> str:
+    async def start_writing(self, msg: discord.Message, persona: dict, ccfg: dict, request: str) -> None:
+        """執筆モードへ。もう Gemma で動いていれば、確かめずにすぐ入る（切り替えの待ちが無いので）。
+        Strata のときだけ、切り替えに2〜3分かかるので確認してから。"""
         if gpu_mode.current() == "luna":
-            return "執筆モードに入って書く？"
-        return "執筆モード（Gemma）に切り替えて書く？ 切り替えに2〜3分かかるよ"
+            if await self.enter_writing(msg, persona, ccfg, request):
+                await self.writing(msg, persona, ccfg)
+            return
+        await self.ask_switch(msg, "enter_writing", "執筆モード（Gemma）に切り替えて書く？ 切り替えに2〜3分かかるよ",
+                              request=request)
 
     async def enter_writing(self, msg: discord.Message, persona: dict, ccfg: dict, request: str) -> bool:
         """GPU を Gemma に切り替え、依頼の作品・キャラを下調べして執筆モードに入る。入れなければ False。"""
@@ -452,9 +455,12 @@ class QABot(discord.Client):
         if blocked:
             await msg.channel.send(f"-# いまは{blocked}なので、執筆モード（Gemma）には入れません。Strata のまま書きます")
             return False
-        note = await msg.channel.send("-# ✍️ 執筆モードに入ります（Gemma に切り替え中、2〜3分）…")
+        switch = gpu_mode.current() != "luna"
+        note = await msg.channel.send("-# ✍️ 執筆モードに入ります（Gemma に切り替え中、2〜3分）…" if switch
+                                      else "-# ✍️ 執筆モードに入ります（出てくる作品・キャラを確かめています）…")
         try:
-            await asyncio.to_thread(gpu_mode.to_luna, ccfg)
+            if switch:
+                await asyncio.to_thread(gpu_mode.to_luna, ccfg)
             async with msg.channel.typing():
                 st = await asyncio.to_thread(strata_chat.start_writing, request, ccfg)
         except Exception:
