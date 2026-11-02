@@ -1034,6 +1034,11 @@ import strata_chat  # noqa: E402
 assert strata_chat.kana_names("ソルデムとハンプの配合変化をガイドラインで") == ["ソルデム", "ハンプ"]
 assert strata_chat.search_queries("ミルリノン 配合変化", "ソルデムとハンプの配合変化")[0] == "ソルデム ハンプ 配合変化"
 
+# しらべが [[検索: …]] を書かずに「調べてみます。」だけで終えたときも調べる（長い答えの中の「確認してみてください」は除く）
+assert strata_chat.promised_search("調べてみます。") and strata_chat.promised_search("少し確認してみるね🔎")
+assert not strata_chat.promised_search("こんにちは。何を調べたいですか？" * 3)
+assert not strata_chat.promised_search("おはよう！")
+
 # ルナの小説: 本文の末尾の「次はどうする？」の提案は切る。本文中の「次はどうしよう」は残す
 assert strata_chat.cut_next("本文の終わり。\n\n💡 **次はどうする？**\n**1.** 案A\n**2.** 案B") == "本文の終わり。"
 assert strata_chat.cut_next("本文\n---\n次の展開の提案\n1. 案A") == "本文"

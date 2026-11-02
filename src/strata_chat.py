@@ -37,6 +37,7 @@ SKILLS = {
     "web_search": {"tag": "検索", "rule": """
 ## スキル「検索」（ウェブで調べてから答える）
 - 使うとき: 最新の情報・ニュース、薬の用量・相互作用・添付文書の記載、制度や数値など、うろ覚えだと間違えそうな事実を聞かれたとき。
+  薬・病気・治療・副作用・作用の仕組み・保険点数の質問は、知っているつもりでも必ず使う（記憶だけで答えない）。
   あいさつ・雑談・気持ちの話・会話の中だけで答えられることでは使わない。
 - 使い方: キャラクターの口調で「調べてみる」ことを短く一言伝えてから（答えはまだ書かない）、
   最後の行に [[検索: 検索語1 | 検索語2]] とだけ書いて終える。検索語は1〜2個、検索エンジン向けの短い語の並び。
@@ -279,6 +280,14 @@ def persona_skills(persona: dict) -> list[str]:
     return [s for s in persona.get("skills") or [] if s in SKILLS]
 
 
+PROMISE = re.compile(r"(調べ|確認し|検索し|探し)(てみ|ます|る)")
+
+
+def promised_search(text: str) -> bool:
+    """「調べてみます」のような、調べると言っただけの短い返事か（答えは書いていない）。"""
+    return len(text.strip()) <= 60 and bool(PROMISE.search(text))
+
+
 def base_system(persona: dict) -> str:
     """ペルソナの人柄 ＋ 覚えている嗜好 ＋ 小説の作法。"""
     return (persona.get("system") or "").strip() + memory_block(persona) + craft_block(persona)
@@ -303,6 +312,10 @@ def reply(history: list[dict], cfg: dict) -> dict:
         if bare:
             return {"text": BARE_TAG.sub("", text).strip() or "ちょっと待ってて", "skill": "web_search",
                     "arg": bare.group(1).strip()}
+        # [[検索: …]] を書かずに「調べてみます。」だけで終えることもある（2026-11-02。そのまま何も起きなかった）。
+        # 相手の発言をそのまま検索語にして調べる
+        if promised_search(text):
+            return {"text": text.strip(), "skill": "web_search", "arg": text_of(history[-1]["content"])[:80]}
     if not m or sid not in skills:
         return {"text": SKILL_TAG.sub("", text).strip() or "（うまく返事を作れませんでした。もう一度送ってください）",
                 "skill": None, "arg": ""}
