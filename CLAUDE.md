@@ -19,7 +19,7 @@
 - テストは `.venv\Scripts\python.exe tests\test_offline.py`（`$env:PYTHONIOENCODING='utf-8'`）。全部 ✅ を確かめてから PR。
 
 ## 構成（自宅 PC で動く。Windows 11、RTX 4070 Ti SUPER 16GB、RAM 32GB）
-- **定時の配信**（Windows のタスク「info-digest …」）: AI ダイジェスト 5:30/5:35、学習 6:00、がん薬物療法ニュース 6:30、朝のニュース＋株式の欄（`src/market.py`）＋横浜線沿線の欄（`src/local_events.py`）6:50、note 下書き（水・土）など。
+- **定時の配信**（Windows のタスク「info-digest …」）: AI ダイジェスト 5:30/5:35、学習 6:00、がん薬物療法ニュース 6:30、朝のニュース＋株式の欄（`src/market.py`）＋横浜線沿線の欄（`src/local_events.py`）6:50、note 下書き（水・土）、note 毎日の記事（6:30 の回のあとに自動で公開、`src/note_daily.py`。2026-11-13 に本人が自動公開を決定。土曜は週刊号に任せて作らない）など。
 - **Discord Bot**（タスク「info-digest qa bot」、`scripts/run_qa_bot.ps1` のループで落ちても60秒で再起動）: `src/qa_bot.py`
   - ギモン深堀り（`src/qa_deep.py`）: 疑問 → NotebookLM で一次資料を調べて note の下書き。
   - しらべ（トーク、`src/strata_chat.py`、`style/personas/shirabe.yaml`）: 雑談は Qwen3.6。調べものは NotebookLM（下記）。

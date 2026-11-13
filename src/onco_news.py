@@ -164,10 +164,21 @@ def make_episode(cfg: dict, day: str, webhook: str, title: str) -> None:
         if notebook:
             notebook.close()
         raise
+    audio = None
     if pod.get("enabled"):
         import podcast_nlm
-        podcast_nlm.run(items, pod, webhook=webhook, username=title, notebook=notebook,
-                        avatar_url=cfg.get("avatar_url"))
+        audio = podcast_nlm.run(items, pod, webhook=webhook, username=title, notebook=notebook,
+                                avatar_url=cfg.get("avatar_url"))
+    # note の毎日の記事（note_daily.py。config の note_daily）。材料を保存してから作る
+    import note_daily
+    ncfg = ai_digest.section_config(note_daily.SECTION) or {}
+    if ncfg.get("enabled"):
+        today = now_jst().date()
+        note_daily.save_episode(ncfg, today, {
+            "day": day, "theme": theme, "daily": daily, "overview": overview or "", "by": by,
+            "audio": str(audio) if audio else None,
+            "items": [{k: i.get(k) for k in ("title", "title_ja", "summary_ja", "tag", "source", "link")} for i in items]})
+        note_daily.run_for_episode(today)
 
 
 def main(argv: list[str]) -> None:

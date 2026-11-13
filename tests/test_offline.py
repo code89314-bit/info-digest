@@ -512,6 +512,69 @@ onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "sun", "DISCO
 assert NPOST == []   # 火曜は0件で作らない、日曜は休み
 print("✅ onco_news")
 
+# ---------- note_daily：6:30 の回をそのまま note の記事に（チェックに通らない日は下書きで止める） ----------
+import note_daily  # noqa: E402
+
+NCFG["note_daily"] = {"enabled": True, "publish": True, "skip_days": ["土"], "out_dir": str(TMP / "nd"),
+                      "intro": "病院薬剤師の先生方へ。\npodcast 形式でもお伝えします。",
+                      "hashtags": ["がん薬物療法"], "cover_image": False}
+mon = dt.date(2026, 11, 9)
+orig_now = onco_news.now_jst
+onco_news.now_jst = lambda: dt.datetime(2026, 11, 9, 6, 40)
+common.save_state("onco_archive", {"items": [
+    {"id": "a", "title": "A", "link": "https://ex.com/a", "source": "PMDA", "summary": "", "tag": "新薬・承認", "score": 4,
+     "title_ja": "新薬Aが承認", "summary_ja": "肺がんに適応", "date": "2026-11-08"},
+    {"id": "b", "title": "B", "link": "https://ex.com/b", "source": "FDA", "summary": "", "tag": "新薬・承認", "score": 3,
+     "title_ja": "新薬Bが承認", "summary_ja": "乳がんに適応", "date": "2026-11-07"}]})
+NPOST.clear()
+onco_news.make_episode(onco_news.ai_digest.section_config("onco"), "mon", "DISCORD_WEBHOOK_ONCO", "がん")
+ep = json.loads((TMP / "nd" / "2026-11-09-episode.json").read_text(encoding="utf-8"))
+assert ep["theme"] == "新薬" and ep["by"] == "Strata" and [i["link"] for i in ep["items"]] == ["https://ex.com/a", "https://ex.com/b"]
+assert "今週の新薬" in ep["overview"] and ep["audio"] is None
+r = note_daily.make(note_daily.ai_digest.section_config("note_daily"), mon)
+assert not r["publish"] and any("NotebookLM" in p for p in r["problems"])   # Strata の要約の日は公開しない
+assert r["doc"]["title"] == "11/9（月）がん薬物療法ニュース｜新薬"
+ep["by"] = "NotebookLM"
+note_daily.save_episode(NCFG["note_daily"], mon, ep)
+r = note_daily.make(note_daily.ai_digest.section_config("note_daily"), mon)
+assert r["publish"] and r["problems"] == []
+assert not note_daily.make(note_daily.ai_digest.section_config("note_daily"), mon, draft_only=True)["publish"]
+body = note_daily.body_html(r["doc"])
+assert body.startswith("<p>病院薬剤師の先生方へ。<br>podcast 形式でもお伝えします。</p>\n<blockquote>")
+assert "編集後記" not in body
+assert "筆者の確認を経ずに公開" in body and "<h2>今日のトピックス</h2>" in body and "<h3>肺がん</h3>" in body
+assert '<a href="https://ex.com/a">PMDA</a>' in body and "<h3>💊 新薬Aが承認</h3>" in body   # 分類の絵文字を見出しに
+assert "ここに音声ファイル" not in body                                              # 音声が無い日は音声の節を出さない
+r["doc"]["audio"] = "x.mp3"
+assert "ここに音声ファイル「x.mp3」" in note_daily.body_html(r["doc"])                    # note_publish が探す位置メモ
+ep["items"][1]["link"] = ""
+note_daily.save_episode(NCFG["note_daily"], mon, ep)
+assert any("出典のURL" in p for p in note_daily.make(NCFG["note_daily"], mon)["problems"])
+assert note_daily.md_to_html("**肺がん**\n- 新薬[A](https://ex.com/a)が<承認>\n本文") == \
+    '<h3>肺がん</h3>\n<ul><li>新薬<a href="https://ex.com/a">A</a>が&lt;承認&gt;</li></ul>\n<p>本文</p>'
+# 土曜は作らない（週刊号に任せる）
+SAT = []
+orig_make = note_daily.make
+note_daily.make = lambda cfg, day, **k: SAT.append(day)
+note_daily.run_for_episode(dt.date(2026, 11, 14))
+note_daily.run_for_episode(mon)
+assert SAT == [mon]
+note_daily.make = orig_make
+del NCFG["note_daily"]
+onco_news.now_jst = orig_now
+
+# note_publish：既存の save_draft は（URL, 未完了）のまま。公開は save_and_publish だけ、仕上げに失敗したら公開しない
+import contextlib  # noqa: E402
+
+import note_publish  # noqa: E402
+
+CALLS = []
+note_publish._profile_lock = contextlib.nullcontext
+note_publish._save_draft = lambda *a, **k: CALLS.append(k.get("publish_tags")) or ("https://n/x", [], False)
+assert note_publish.save_draft("t", "b") == ("https://n/x", []) and CALLS == [None]
+assert note_publish.save_and_publish("t", "b", publish_tags=["a"]) == ("https://n/x", [], False) and CALLS[-1] == ["a"]
+print("✅ note_daily")
+
 # ---------- learn：テーマ帳の補充・重みつき選択・扱ったテーマは繰り返さない ----------
 import random  # noqa: E402
 

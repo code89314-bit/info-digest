@@ -644,6 +644,54 @@ learn:
     daily_limit: 3
     rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
+# ==== note 毎日の記事「がん薬物療法ニュース」（6:30 の回をそのまま note に公開） ====
+# src/note_daily.py が動かします（onco_news.py が曜日の回を Discord に投稿したあとに続けて呼ぶ。タスクの追加は不要）。
+#   動向まとめ・記事ごとの要約・podcast（音声）を1本の記事にして、note に下書き保存 → チェックに通れば公開します。
+#   チェックに通らない日（NotebookLM が使えずローカルのモデルの要約だった、出典URLが無い、音声を貼れなかった など）は
+#   公開せず下書きで止めて、Discord（note 下書きのチャンネル）に理由を知らせます。
+# 作り直し: python src\note_daily.py --date 2026-11-13 （--draft-only で公開しない・--dry-run でファイルだけ）
+note_daily:
+  enabled: true
+  # true: チェックに通れば自動で公開する。false: 毎日 下書き保存まで（公開は手で）
+  publish: true
+  # 作らない曜日（土曜は 7:00 の週刊号に任せる。日曜は 6:30 の回自体が休み）
+  skip_days: [土]
+  title: note 毎日のニュース
+  # 通知先の Webhook URL を入れる環境変数の名前（値は .env に書く）
+  webhook_env: DISCORD_WEBHOOK_NOTE
+  avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/note.png?v=1
+  # 記事のタイトル。{m}{d}=月日、{w}=曜日、{theme}=その日のテーマ
+  title_format: "{m}/{d}（{w}）がん薬物療法ニュース｜{theme}"
+  # NotebookLM が要約した日だけ公開する（ローカルのモデルは薬の名前を取り違えることがあるため。false にはしないのがおすすめ）
+  require_notebooklm: true
+  # 記事がこの数より少ない日は公開しない
+  min_items: 1
+  # 公開するときに付けるハッシュタグ（# は付けない）
+  hashtags: [がん薬物療法, 抗がん剤, 薬剤師, がん専門薬剤師, 病院薬剤師, 医療ニュース]
+  # 記事のいちばん上に置く「誰に向けた記事か」の文（毎日そのまま。編集後記は付けない）
+  intro: |
+    日々、日常業務に追われる病院薬剤師、がん認定薬剤師の先生方へ。国内外のがん薬物療法に関わる最新のトピックスをお送りします。
+    朝の通勤時間、食事の支度、子どもの寝かしつけの合間にも、耳で聞いて情報をキャッチアップできるよう、podcast 形式でもお伝えします。
+  # 記事の冒頭の注意書き（確認せずに公開するので、週刊号とは文が違う）
+  opening_notice: |
+    この記事は、公開情報をもとにAI（NotebookLM 等）が自動で作成し、筆者の確認を経ずに公開しています。
+    誤りを含むことがあります。内容に当たっては、必ず一次資料（添付文書・ガイドライン・論文原著）をご確認ください。
+    お気づきの点はコメントでお知らせください。
+  # 記事の最後の注意書き
+  footer: |
+    ※公開情報をもとにAI（NotebookLM 等）が自動で作成した記事です。詳細・判断は必ず一次資料でご確認ください。
+    ※記事の内容は薬剤師の助言や指導ではありません。医療従事者向けの情報です。
+    個人・個別の健康相談については、かかりつけ医、薬剤師にお尋ねください。
+  # 音声（その日の podcast）の見出しと説明。note の音声は100MBまで
+  audio_heading: 音声版（AI音声）
+  audio_author: じぶんの薬局（NotebookLM による AI音声）
+  # トップ画像（週刊号と同じ手描き風。日付だけの版）
+  cover_image: true
+  # ブラウザの画面を出さずに動かす（note のエディタは画面なしだと読み込みが終わらないので false のまま）
+  headless: false
+  # 作った記事の保存先（Git に入らない）
+  out_dir: .local/note_daily
+
 # ==== note 週刊マガジン「週刊がん薬物療法ニュース」の下書き ====
 # src/note_weekly.py が動かします（土曜の週間まとめの後に実行する想定）。
 #   直近7日の週間アーカイブ（onco が毎日ためている記事、全分類）を NotebookLM に読ませ、
