@@ -516,6 +516,7 @@ print("✅ onco_news")
 import note_daily  # noqa: E402
 
 NCFG["note_daily"] = {"enabled": True, "publish": True, "skip_days": ["土"], "out_dir": str(TMP / "nd"),
+                      "intro": "病院薬剤師の先生方へ。\npodcast 形式でもお伝えします。",
                       "hashtags": ["がん薬物療法"], "cover_image": False}
 mon = dt.date(2026, 11, 9)
 orig_now = onco_news.now_jst
@@ -539,6 +540,8 @@ r = note_daily.make(note_daily.ai_digest.section_config("note_daily"), mon)
 assert r["publish"] and r["problems"] == []
 assert not note_daily.make(note_daily.ai_digest.section_config("note_daily"), mon, draft_only=True)["publish"]
 body = note_daily.body_html(r["doc"])
+assert body.startswith("<p>病院薬剤師の先生方へ。<br>podcast 形式でもお伝えします。</p>\n<blockquote>")
+assert "編集後記" not in body
 assert "筆者の確認を経ずに公開" in body and "<h2>今日のトピックス</h2>" in body and "<h3>肺がん</h3>" in body
 assert '<a href="https://ex.com/a">PMDA</a>' in body and "<h3>💊 新薬Aが承認</h3>" in body   # 分類の絵文字を見出しに
 assert "ここに音声ファイル" not in body                                              # 音声が無い日は音声の節を出さない

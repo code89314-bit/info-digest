@@ -103,7 +103,7 @@ def build(cfg: dict, ep: dict, day: dt.date, audio_name: str | None) -> dict:
     for i in items:
         i["heading"] = i["heading"].strip()
     span = "今日の新着" if ep.get("daily") else "直近1週間"
-    return {"title": title_of(cfg, ep, day), "notice": (cfg.get("opening_notice") or DEFAULT_NOTICE).strip(),
+    return {"title": title_of(cfg, ep, day), "intro": (cfg.get("intro") or "").strip(), "notice": (cfg.get("opening_notice") or DEFAULT_NOTICE).strip(),
             "lead": f"{day.month}/{day.day}（{JA_DAY[day.weekday()]}）のテーマは「{ep.get('theme')}」。"
                     f"{span}の記事 {len(items)} 件から、主なトピックをまとめました。",
             "overview": (ep.get("overview") or "").strip(), "items": items, "audio": audio_name,
@@ -116,7 +116,8 @@ def build(cfg: dict, ep: dict, day: dt.date, audio_name: str | None) -> dict:
 
 def body_html(doc: dict) -> str:
     e = html.escape
-    b = ["<blockquote><p><strong>この記事について</strong><br>"
+    b = ["<p>" + "<br>".join(e(x) for x in doc["intro"].splitlines()) + "</p>" if doc.get("intro") else "",
+         "<blockquote><p><strong>この記事について</strong><br>"
          + "<br>".join(e(x) for x in doc["notice"].splitlines()) + "</p></blockquote>",
          f"<p>{e(doc['lead'])}</p>"]
     if doc["audio"]:
@@ -131,7 +132,7 @@ def body_html(doc: dict) -> str:
         src = f'<a href="{e(i["url"])}">{e(i["source"] or i["url"])}</a>' if i["url"] else e(i["source"])
         b.append(f"<p>{e(i['summary'])}<br><strong>出典</strong>　{src}</p>")
     b.append("<p>" + "<br>".join(e(x) for x in doc["footer"].splitlines()) + "</p>")
-    return "\n".join(b)
+    return "\n".join(x for x in b if x)
 
 
 def to_html(doc: dict, problems: list[str]) -> str:
