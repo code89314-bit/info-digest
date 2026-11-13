@@ -20,6 +20,7 @@ X やニュースアプリを見なくても済むように、必要な一次情
 | がん薬物療法ニュース | 毎日ためて、曜日テーマで要約＋podcast | 自宅PC | 毎日 6:30 |
 | 朝のニュース | NHK・ITmedia から関心に合うものだけ（広告なしで読める要約）＋株式（S&P500・米国と日本の個別株の値動きと原因）＋横浜線沿線（町田〜橋本）の申込が要るイベント・イベント・新しいお店 | 自宅PC | 毎日 6:50 |
 | note 下書き | 週刊がん薬物療法ニュース（土）・保険の話（水）を note に下書き保存 | 自宅PC | 土・水 7:00 |
+| note 毎日の記事 | 6:30 のがん薬物療法ニュースの回を note に公開（チェックに通らない日は下書きで止めて Discord に通知。`config.yaml` の `note_daily`） | 自宅PC | 月〜金 6:30 の回のあと |
 | 疑問深堀り・トーク | Discord Bot（しらべ＝NotebookLM で調べもの、ルナ＝小説・画像） | 自宅PC（常駐） | いつでも |
 
 ## 2. 全体の構成
@@ -259,6 +260,7 @@ src/
   podcast_nlm.py          NotebookLM（資料の読み込み・要約・podcast）
   nlm_notebooks.py        しらべの専門ノート（保険点数・経緯・がん薬物療法・がん支持療法。設定は style/nlm_notebooks.yaml）
   note_weekly.py ほか     note の下書き（note_hoken.py・note_publish.py）
+  note_daily.py           note 毎日の記事（6:30 の回をそのまま公開。作り直しは --date YYYY-MM-DD）
   qa_bot.py / qa_deep.py  Discord Bot（疑問深堀り）
   strata_chat.py          トーク（ペルソナ・検索・小説・記憶）
   gpu_mode.py             ルナ・ComfyUI と GPU を貸し借りする決まり

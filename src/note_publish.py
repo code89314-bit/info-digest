@@ -1,8 +1,9 @@
-"""note に週刊号を「下書き保存」する（公開はしない。最終確認と公開はユーザーが手で行う）。
+"""note に週刊号を「下書き保存」する（週刊号・保険の話・疑問深堀りは公開しない。最終確認と公開はユーザーが手で行う）。
 
 note には公式の投稿APIが無いので、Playwright で note 専用のブラウザ（プロファイル）を操作する。
 ログインは最初に1回だけ手で行い（--login）、ログイン状態はこのプロファイル（.local/note_profile）に残す。
-ふだん使いの Chrome のログイン情報・Cookie には触らない。押すのは「下書き保存」だけ（公開・投稿のボタンは押さない）。
+ふだん使いの Chrome のログイン情報・Cookie には触らない。save_draft が押すのは「下書き保存」だけ。
+「公開に進む」「投稿する」を押すのは save_and_publish だけ（毎日のニュース note_daily.py。2026-11-13 に本人が自動公開を決定）。
 
 準備（1回だけ）:
     .venv\\Scripts\\python.exe -m playwright install chromium
@@ -243,7 +244,41 @@ def save_draft(title: str, body_html: str, *, audio: dict | None = None, cover: 
     edit_url を渡すと、その下書きを開いて仕上げだけ行う。戻り値は（編集画面のURL, できなかったこと）。
     """
     with _profile_lock():
-        return _save_draft(title, body_html, audio=audio, cover=cover, headless=headless, edit_url=edit_url)
+        url, todo, _ = _save_draft(title, body_html, audio=audio, cover=cover, headless=headless, edit_url=edit_url)
+        return url, todo
+
+
+def save_and_publish(title: str, body_html: str, *, audio: dict | None = None, cover: str | None = None,
+                     headless: bool = False, publish_tags: list[str] | None = None) -> tuple[str, list[str], bool]:
+    """下書き保存までは save_draft と同じ。publish_tags を渡すと、仕上げがすべてできたときだけ公開する
+    （毎日のニュース note_daily.py だけが使う）。戻り値は（URL, できなかったこと, 公開したか）。"""
+    with _profile_lock():
+        return _save_draft(title, body_html, audio=audio, cover=cover, headless=headless, edit_url=None,
+                           publish_tags=publish_tags)
+
+
+def _press_publish(page, tags: list[str]) -> str:
+    """「公開に進む」→ ハッシュタグを入れる → 「投稿する」。記事タイプ（無料）などの設定は触らない。公開後のURLを返す。"""
+    page.get_by_role("button", name="公開に進む").first.click()
+    page.wait_for_url("**/publish/**", timeout=60000)
+    page.wait_for_timeout(4000)
+    box = page.get_by_placeholder("ハッシュタグを追加する").first
+    box.wait_for(timeout=30000)
+    for t in tags:
+        box.click()
+        box.fill(str(t).lstrip("#"))
+        page.wait_for_timeout(700)
+        box.press("Enter")
+        page.wait_for_timeout(1000)
+    _shot(page, "publish-settings")
+    page.get_by_role("button", name="投稿する", exact=True).first.click()
+    end = time.time() + 120
+    while time.time() < end and "/publish/" in page.url:   # 投稿が終わると記事のページへ移る
+        page.wait_for_timeout(2000)
+    if "/publish/" in page.url:
+        raise RuntimeError("「投稿する」のあと画面が変わりませんでした（公開されたか note で確認してください）")
+    page.wait_for_timeout(3000)
+    return page.url
 
 
 @contextlib.contextmanager
@@ -275,7 +310,7 @@ def _profile_lock(wait: int = 3600):
 
 
 def _save_draft(title: str, body_html: str, *, audio: dict | None, cover: str | None, headless: bool,
-                edit_url: str | None) -> tuple[str, list[str]]:
+                edit_url: str | None, publish_tags: list[str] | None = None) -> tuple[str, list[str], bool]:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         ctx = _context(p, headless)
@@ -306,8 +341,16 @@ def _save_draft(title: str, body_html: str, *, audio: dict | None, cover: str | 
             todo = finish(page, audio, cover)
             _press_save(page)
             _shot(page, "saved")
-            print("note に下書き保存しました:", page.url, *(f"\n  未完了: {t}" for t in todo))
-            return page.url, todo
+            url = page.url
+            print("note に下書き保存しました:", url, *(f"\n  未完了: {t}" for t in todo))
+            if publish_tags is None or todo:   # 仕上げに失敗した記事は公開しない（位置メモが残っているため）
+                return url, todo, False
+            try:
+                url = _press_publish(page, publish_tags)
+            except Exception as ex:   # noqa: BLE001  公開できなくても下書きは残っている
+                return url, todo + [f"公開できませんでした（{str(ex)[:120]}・画面: {_shot(page, 'publish-error')}）"], False
+            print("note に公開しました:", url)
+            return url, todo, True
         except NeedLogin:
             raise
         except Exception as ex:

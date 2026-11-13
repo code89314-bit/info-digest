@@ -75,7 +75,7 @@ def rotate(pts, cx, cy, deg):
             for x, y in pts]
 
 
-def newspaper(img, pen: Pen, cx, cy, start: dt.date, end: dt.date) -> None:
+def newspaper(img, pen: Pen, cx, cy, start: dt.date, end: dt.date, head: str = "週刊") -> None:
     w, h, deg = 330 * K, 400 * K, -6
     x0, y0 = cx - w / 2, cy - h / 2
     outline = edge((x0, y0), (x0 + w, y0)) + edge((x0 + w, y0), (x0 + w, y0 + h)) + \
@@ -93,8 +93,8 @@ def newspaper(img, pen: Pen, cx, cy, start: dt.date, end: dt.date) -> None:
     # 題字と日付（新聞の傾きに合わせて回した文字を貼る）
     label = Image.new("RGBA", (int(w), int(130 * K)), (0, 0, 0, 0))
     ld = ImageDraw.Draw(label)
-    ld.text((w / 2, 48 * K), "週刊", font=ImageFont.truetype(FONT, 44 * K), fill=INK, anchor="mm")
-    ld.text((w / 2, 96 * K), f"{start.month}/{start.day}–{end.month}/{end.day}",
+    ld.text((w / 2, 48 * K), head, font=ImageFont.truetype(FONT, 44 * K), fill=INK, anchor="mm")
+    ld.text((w / 2, 96 * K), (f"{end.month}/{end.day}" if start == end else f"{start.month}/{start.day}–{end.month}/{end.day}"),
             font=ImageFont.truetype(FONT, 22 * K), fill=INK, anchor="mm")
     label = label.rotate(-deg, resample=Image.BICUBIC, expand=True)
     lx, ly = rotate([(cx, y0 + 76 * K)], cx, cy, deg)[0]
@@ -135,12 +135,12 @@ def capsule(img, pen: Pen, cx, cy, deg) -> None:
     pen.line(pen.wobble(rotate(edge((cx, y0 + 4 * K), (cx, y0 + h - 4 * K), 8), cx, cy, deg), 0.8), width=5)
 
 
-def make_cover(start: dt.date, end: dt.date, out: Path, seed: int | None = None) -> Path:
+def make_cover(start: dt.date, end: dt.date, out: Path, seed: int | None = None, head: str = "週刊") -> Path:
     week = end.isocalendar()[1]
     bg = BACKGROUNDS[week % len(BACKGROUNDS)]
     img = Image.new("RGBA", (W * K, H * K), rgb(bg) + (255,))
     pen = Pen(ImageDraw.Draw(img), seed if seed is not None else week)
-    newspaper(img, pen, 480 * K, 310 * K, start, end)
+    newspaper(img, pen, 480 * K, 310 * K, start, end, head)
     pen.d = ImageDraw.Draw(img)
     iv_bag(pen, 800 * K, 270 * K)
     capsule(img, pen, 285 * K, 545 * K, -18)
