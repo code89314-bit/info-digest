@@ -461,6 +461,35 @@ assert all(sum(len(e["title"]) + len(e["description"]) for e in p["embeds"]) <= 
 assert sum(len(p["embeds"]) for p in SENT_PAYLOADS) == 17 and SENT_PAYLOADS[0]["content"] == "見出し"
 print("✅ discord embed chunks")
 
+# ---------- Discord: 413（大きすぎる）なら1つずつに分け、それでも大きければ縮めて送り直す ----------
+import requests  # noqa: E402
+SENT_PAYLOADS = []
+
+
+def send_413(url, p, wait=False):
+    size = len(p.get("content") or "") + sum(len(e.get("description", "")) for e in p.get("embeds") or [])
+    if size > 3000:
+        resp = requests.Response()
+        resp.status_code = 413
+        raise requests.HTTPError("413", response=resp)
+    SENT_PAYLOADS.append(p)
+    return f"id{len(SENT_PAYLOADS)}"
+
+
+common._send = send_413
+os.environ.pop("DRY_RUN")
+got_ids = []
+common.post_discord("DISCORD_TEST", content="見出し",
+                    embeds=[{"title": "a", "description": "あ" * 1500}, {"title": "b", "description": "う" * 1500},
+                            {"title": "c", "description": ("い" * 99 + "\n") * 40}],
+                    ids=got_ids)
+os.environ["DRY_RUN"] = "1"
+assert SENT_PAYLOADS[0] == {**SENT_PAYLOADS[0], "content": "見出し", "embeds": []}   # 見出し・a・b を1つずつに
+assert [e["title"] for p in SENT_PAYLOADS for e in p["embeds"]] == ["a", "b", "c"]
+assert SENT_PAYLOADS[-1]["embeds"][0]["description"].endswith("…（長いため省略）")   # 4000字の欄は縮めた
+assert got_ids == ["id1", "id2", "id3", "id4"]
+print("✅ discord 413 retry")
+
 # ---------- NotebookLM の回答が途中で切れても読める分を使い、残りだけ聞き直す ----------
 cut = '{"items": [{"i": 0, "title_ja": "見0", "summary_ja": "要0"}, {"i": 1, "title_ja": "見1", "summary_ja": "要1"}, {"i": 2, "titl'
 assert [g["i"] for g in ai_digest.parse_item_objects(cut)] == [0, 1]

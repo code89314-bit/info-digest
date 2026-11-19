@@ -115,9 +115,37 @@ def post_discord(webhook_env: str, content: str = "", embeds: list | None = None
             p["username"] = username
         if avatar_url:
             p["avatar_url"] = avatar_url
-        mid = _send(url, p, wait=ids is not None)
-        if ids is not None and mid:
-            ids.append(mid)
+        for mid in _send_fit(url, p, wait=ids is not None):
+            if ids is not None and mid:
+                ids.append(mid)
+
+
+def _send_fit(url: str, p: dict, wait: bool = False) -> list:
+    """_send して、413（大きすぎる）なら embed を1つずつに分けて送り直す。1つでも大きければ本文を縮める。
+    こちらの文字数の見積もりと Discord の数え方が合わず、413 で止まったことがある
+    （2026-10-21・11-20 がん、10-30 朝のニュース）。送ったメッセージのIDのリストを返す。"""
+    try:
+        return [_send(url, p, wait=wait)]
+    except requests.HTTPError as ex:
+        if ex.response is None or ex.response.status_code != 413:
+            raise
+        err = ex
+    embeds = p.get("embeds") or []
+    base = {k: v for k, v in p.items() if k not in ("content", "embeds")}
+    if len(embeds) > 1 or (embeds and p.get("content")):
+        print(f"Discord: 大きすぎたので {len(embeds)} 個の欄を1つずつに分けて送り直します")
+        parts = [{**base, "content": p["content"], "embeds": []}] if p.get("content") else []
+        parts += [{**base, "content": "", "embeds": [e]} for e in embeds]
+        return [m for q in parts for m in _send_fit(url, q, wait)]
+    if embeds and len(embeds[0].get("description") or "") > 300:
+        e = dict(embeds[0])
+        d = e["description"]
+        cut = d[: len(d) * 2 // 3]
+        cut = cut.rsplit("\n", 1)[0] if "\n" in cut else cut   # 行（リンク）の途中で切らない
+        e["description"] = cut.rstrip() + "\n…（長いため省略）"
+        print(f"Discord: 欄「{e.get('title', '')}」が大きすぎたので {len(d)} → {len(e['description'])} 字に縮めます")
+        return _send_fit(url, {**base, "content": "", "embeds": [e]}, wait)
+    raise err
 
 
 def _payloads(content: str, embeds: list) -> list[dict]:
@@ -131,7 +159,10 @@ def _payloads(content: str, embeds: list) -> list[dict]:
     # 5800字では 413 になったことがある（2026-10-30、朝のニュース。本文も含めて数える・余裕を取る）
     chunks, cur, size = [], [], len(content or "")
     for e in embeds:
-        n = len(e.get("title", "")) + len(e.get("description", ""))
+        # Discord はフッター・著者・項目（fields）の文字も合計に数える
+        n = (len(e.get("title", "")) + len(e.get("description", "")) + len((e.get("footer") or {}).get("text", ""))
+             + len((e.get("author") or {}).get("name", ""))
+             + sum(len(f.get("name", "")) + len(f.get("value", "")) for f in e.get("fields") or []))
         if cur and (len(cur) == 10 or size + n > 5000):
             chunks.append(cur)
             cur, size = [], 0
