@@ -361,6 +361,8 @@ def notebook_settings(cfg: dict, style: dict, title: str = "") -> dict:
     pod = style.get("podcast") or {}
     return {**base, "title": f"ギモン深堀り {title}"[:60], "label": f"ギモン深堀り：{title}",
             "instructions": (pod.get("instructions") or "").strip() + (f"\nテーマ: {title}" if title else ""),
+            # 断られてもその場では待たない（Bot の音声待ちの列に残して、あとで qa_bot がやり直す）
+            "rate_limit_wait_minutes": [],
             **(cfg.get("notebook") or {})}
 
 
@@ -386,6 +388,17 @@ def audio_slots(pod: dict, cfg: dict, now: dt.datetime | None = None, used: int 
         if now.strftime("%H:%M") < str(r.get("until", "00:00")):
             reserve += int(r.get("n", 1))
     return int(pod.get("daily_limit", 3)) - used - reserve
+
+
+def rate_limit_retry_at(cfg: dict, now: dt.datetime | None = None) -> dt.datetime | None:
+    """Google に「作りすぎ」（RateLimit）と断られたとき、次にやり直す時刻。今日はもう諦めるなら None。
+    Google の制限は約5時間で戻る（量で決まる）ので、決まった時刻ではなく一定の間隔で試す。"""
+    now = now or dt.datetime.now()
+    nxt = now + dt.timedelta(minutes=int(cfg.get("rate_limit_retry_minutes", 60)))
+    give_up = str(cfg.get("rate_limit_give_up", "22:00"))
+    if nxt.date() != now.date() or nxt.strftime("%H:%M") > give_up:
+        return None
+    return nxt
 
 
 # ---- 1つの疑問を処理（Discord から呼ぶ） ----
