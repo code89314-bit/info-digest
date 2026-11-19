@@ -804,9 +804,15 @@ qa_bot:
     - {weekday: 2, until: "09:30", n: 1}   # 水曜号 7:00（weekday: 0=月 … 6=日。2026-10-29 に 22:00 から移動）
   # 音声待ちを確認する間隔（分）
   audio_check_minutes: 20
-  # Google に「作りすぎ」（RateLimit）と断られたとき: 何分おきにやり直すか、何時で諦めるか。
-  #   Google の音声の上限は量で決まり、約5時間で戻る（2026-11-19 本人の観察）。朝のルーチンのあとは午後になることが多い
+  # Google に「作りすぎ」（RateLimit）と断られたとき、いつやり直すか。
+  #   Google の音声の上限は約5時間で戻る（2026-11-19 本人の判断）。そこで
+  #   「直近5時間でいちばん古い音声を作った時刻 ＋ rate_limit_window_hours ＋ rate_limit_margin_minutes」にやり直す。
+  #   作った時刻は .local/audio_times.json に自動で記録（info-digest の分だけ。手で作った分は入らない）
+  rate_limit_window_hours: 5
+  rate_limit_margin_minutes: 10     # 余裕（分）
+  # 記録が無いとき・その時刻でも断られたときに、何分おきに試すか
   rate_limit_retry_minutes: 60
+  # この時刻を過ぎるなら諦める（翌朝のルーチンの枠を取らないため）
   rate_limit_give_up: "22:00"
   notebook: {}
   note_post:

@@ -390,11 +390,23 @@ def audio_slots(pod: dict, cfg: dict, now: dt.datetime | None = None, used: int 
     return int(pod.get("daily_limit", 3)) - used - reserve
 
 
-def rate_limit_retry_at(cfg: dict, now: dt.datetime | None = None) -> dt.datetime | None:
+def rate_limit_retry_at(cfg: dict, now: dt.datetime | None = None,
+                        times: list[dt.datetime] | None = None) -> dt.datetime | None:
     """Google に「作りすぎ」（RateLimit）と断られたとき、次にやり直す時刻。今日はもう諦めるなら None。
-    Google の制限は約5時間で戻る（量で決まる）ので、決まった時刻ではなく一定の間隔で試す。"""
+    Google の上限は約5時間で戻る。直近5時間でいちばん古い生成の時刻 ＋5時間（＋少しの余裕）にやり直す。
+    作った時刻の記録が無い（手で作った分など）・その時刻を過ぎても断られたときは、一定の間隔で試す。"""
     now = now or dt.datetime.now()
-    nxt = now + dt.timedelta(minutes=int(cfg.get("rate_limit_retry_minutes", 60)))
+    window = dt.timedelta(hours=float(cfg.get("rate_limit_window_hours", 5)))
+    if times is None:
+        import podcast_nlm
+        times = podcast_nlm.recent_times(now, hours=float(cfg.get("rate_limit_window_hours", 5)))
+    fallback = now + dt.timedelta(minutes=int(cfg.get("rate_limit_retry_minutes", 60)))
+    inside = [t for t in times if now - window < t <= now]
+    nxt = fallback
+    if inside:
+        reset = min(inside) + window + dt.timedelta(minutes=int(cfg.get("rate_limit_margin_minutes", 10)))
+        if reset > now:
+            nxt = reset
     give_up = str(cfg.get("rate_limit_give_up", "22:00"))
     if nxt.date() != now.date() or nxt.strftime("%H:%M") > give_up:
         return None
