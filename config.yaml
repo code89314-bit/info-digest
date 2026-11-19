@@ -542,7 +542,9 @@ onco:
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     # 音声の1日上限（適正使用ガイド用の onco_tekisei と同じ台帳で合算）
     ledger: 'E:\onco_tekisei\audio_usage.json'
-    daily_limit: 3
+    # 2026-11-19 に 3 → 5（本人の判断）。Google の上限は約5時間で戻るので、時間をずらせば1日に3本より多く作れる。
+    #   断られたときは qa_bot.rate_limit_* の決まりでやり直す
+    daily_limit: 5
     # 枠が残っていても Google が「作りすぎ」と断ることがある。そのときは何分待ってやり直すか（空なら諦める）
     rate_limit_wait_minutes: [30, 60]
 
@@ -644,7 +646,7 @@ learn:
     cli_path_add: '%APPDATA%\Python\Python310\Scripts'
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     ledger: 'E:\onco_tekisei\audio_usage.json'
-    daily_limit: 3
+    daily_limit: 5                      # 上の onco.podcast と同じにする（台帳は共通）
     rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
 # ==== note 毎日の記事「がん薬物療法ニュース」（6:00 の回をそのまま note に公開） ====
@@ -801,7 +803,7 @@ qa_bot:
   max_extra_sources: 10
   cover_image: true
   out_dir: .local/qa
-  # NotebookLM の音声は1日3本（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
+  # NotebookLM の音声は1日5本まで（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
   audio_reserve:
     - {until: "08:00", n: 2}               # 学習 4:00・ニュース 6:00（ギモン深堀りの音声は 8:00 から）
     - {weekday: 2, until: "10:30", n: 1}   # 水曜号 8:00（weekday: 0=月 … 6=日。2026-11-19 に 7:00 から移動）

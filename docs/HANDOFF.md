@@ -229,7 +229,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 流れ: チャンネルに疑問を書く → スレッドを作って返信 → Strata が患者情報を確認（疑わしければ外部に送らず、言い換え案を返して止める）
   → Strata が解釈・論点・検索語 → NotebookLM のウェブ調査＋検索（一次資料のドメインだけ）→ NotebookLM が論点ごとに「結論→根拠→注意→出典」
   → 確認メモ → note に下書き保存（トップ画像は `make_cover.make_cover_gimon`）→ スレッドに要約・md/html・note のURL。
-- 音声: NotebookLM の1日3本の枠に空きがあるときだけ（`audio_reserve` で学習・ニュース・水曜号の分を空けておく）。
+- 音声: NotebookLM の1日の枠（台帳で5本。2026-11-19 に3本から）に空きがあるときだけ（`audio_reserve` で学習・ニュース・水曜号の分を空けておく）。Google に断られたら、直近5時間でいちばん古い生成＋5時間にやり直す（`rate_limit_*`）。
   無ければノートを残して待ち（`.local/state/qa_bot.json` の pending）、20分おきに確認して、作ったらスレッドに貼り note の下書きにも埋め込む。
 - 受け付けるのは Bot の持ち主（開発者ポータルの Owner）の書き込みだけ。
 - 必要: `.env` に `DISCORD_BOT_TOKEN` と `DISCORD_QA_CHANNEL_ID`、開発者ポータルで Message Content Intent を ON、`pip install discord.py`。
