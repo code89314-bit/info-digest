@@ -363,11 +363,14 @@ assert podcast_nlm.bitrate_for(20 * 60, 9.5) == 56      # 20分なら 61kbps 相
 assert podcast_nlm.bitrate_for(5 * 60, 9.5) == 64       # 短ければ上限64kbps
 assert podcast_nlm.bitrate_for(90 * 60, 9.5) == 24      # 長いときは24kbpsから（収まらなければ compress が16kbpsまで下げる）
 ledger = TMP / "audio_usage.json"
+podcast_nlm.TIMES_FILE = TMP / "audio_times.json"   # 本物の .local に書かない
 pod = {"ledger": str(ledger)}
 assert podcast_nlm.used_today(pod) == 0
 podcast_nlm.record_use(pod)
 podcast_nlm.record_use(pod)
 assert podcast_nlm.used_today(pod) == 2
+assert len(podcast_nlm.recent_times(hours=1)) == 2   # 作った時刻も残る
+assert podcast_nlm.recent_times(podcast_nlm.dt.datetime.now() + podcast_nlm.dt.timedelta(hours=6), hours=5) == []
 txt = podcast_nlm.source_text([{"title_ja": "新薬X", "tag": "新薬・承認", "source": "PMDA", "link": "https://ex.com/x",
                                  "summary_ja": "要約", "title": "X approved", "summary": "body"}], "がん 2026")
 assert "https://ex.com/x" in txt and "X approved" in txt and "新薬X" not in txt   # LLMの日本語は入れない
@@ -1085,12 +1088,18 @@ assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 9, 0), used=2) == 1
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9, 0), used=2) == 0   # 水曜は水曜号の分
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
-# Google に断られたら: 60分おきにやり直し、22:00 を過ぎるなら諦める
-assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 8, 0)) == dt.datetime(2026, 11, 19, 9, 0)
-assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 21, 30)) is None
-assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 23, 30)) is None   # 日をまたぐ
+# Google に断られたら: 直近5時間でいちばん古い生成 ＋5時間＋10分。記録が無ければ60分後。22:00 を過ぎるなら諦める
+D = lambda h, m: dt.datetime(2026, 11, 19, h, m)   # noqa: E731
+assert qa_deep.rate_limit_retry_at({}, D(7, 45), [D(6, 4), D(6, 37)]) == D(11, 14)
+assert qa_deep.rate_limit_retry_at({}, D(11, 14), [D(6, 4), D(6, 37)]) == D(11, 47)   # まだ駄目なら次の生成から
+assert qa_deep.rate_limit_retry_at({}, D(12, 0), [D(6, 4), D(6, 37)]) == D(13, 0)    # 5時間を過ぎても駄目なら60分後
+assert qa_deep.rate_limit_retry_at({}, D(8, 0), [dt.datetime(2026, 11, 18, 18, 0)]) == D(9, 0)   # 古い記録は使わない
+assert qa_deep.rate_limit_retry_at({}, D(8, 0), []) == D(9, 0)
+assert qa_deep.rate_limit_retry_at({}, D(18, 0), [D(17, 0)]) is None              # 22:10 は 22:00 を過ぎる
+assert qa_deep.rate_limit_retry_at({}, D(21, 30), []) is None
+assert qa_deep.rate_limit_retry_at({}, D(23, 30), []) is None   # 日をまたぐ
 assert qa_deep.rate_limit_retry_at({"rate_limit_retry_minutes": 30, "rate_limit_give_up": "23:00"},
-                                   dt.datetime(2026, 11, 19, 22, 15)) == dt.datetime(2026, 11, 19, 22, 45)
+                                   D(22, 15), []) == D(22, 45)
 assert qa_deep.notebook_settings({}, {}, "x")["rate_limit_wait_minutes"] == []   # その場では待たない
 # 執筆のスレッドの名前: 持ち込んだ会話の最後の行（話した人の名前は外す）
 tn = qa_bot.QABot.thread_name("ルナ: どんな話？\nあなた: 夜の学校で二人きりの話を書いて")

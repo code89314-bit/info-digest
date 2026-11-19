@@ -1086,9 +1086,8 @@ class QABot(discord.Client):
                 if retry:   # Google の回数制限。ノートは残して、あとでやり直す
                     log.info("audio %s: RateLimit, retry at %s", item["qid"], retry.strftime("%H:%M"))
                     if not item.get("retry_at"):
-                        mins = int(self.cfg.get("rate_limit_retry_minutes", 60))
-                        await thread.send(f"🎧 NotebookLM の音声の上限に当たりました（数時間で戻ります）。"
-                                          f"{mins}分おきにやり直して、できたらここに貼ります"
+                        await thread.send(f"🎧 NotebookLM の音声の上限に当たりました（約5時間で戻ります）。"
+                                          f"{retry:%H:%M} ごろにやり直して、できたらここに貼ります"
                                           f"（{self.cfg.get('rate_limit_give_up', '22:00')} まで）。")
                     state = load_state(STATE)
                     for p in state.get("pending") or []:

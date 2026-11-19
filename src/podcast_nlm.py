@@ -92,6 +92,31 @@ def record_use(pod: dict) -> None:
     cutoff = (dt.date.today() - dt.timedelta(days=60)).isoformat()
     p.write_text(json.dumps({d: c for d, c in data.items() if d >= cutoff}, ensure_ascii=False, indent=2),
                  encoding="utf-8")
+    _record_time()
+
+
+# ---- 音声を作った時刻（info-digest の分だけ。Google の上限は約5時間で戻るので、次に作れる時刻の見積もりに使う） ----
+TIMES_FILE = ROOT / ".local" / "audio_times.json"
+
+
+def recent_times(now: dt.datetime | None = None, hours: float = 24) -> list[dt.datetime]:
+    now = now or dt.datetime.now()
+    try:
+        raw = json.loads(TIMES_FILE.read_text(encoding="utf-8"))
+        times = [dt.datetime.fromisoformat(t) for t in raw if isinstance(t, str)]
+    except (OSError, ValueError):
+        return []
+    return sorted(t for t in times if now - dt.timedelta(hours=hours) <= t <= now)
+
+
+def _record_time() -> None:
+    now = dt.datetime.now()
+    times = recent_times(now, hours=48) + [now]
+    try:
+        TIMES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TIMES_FILE.write_text(json.dumps([t.isoformat(timespec="seconds") for t in times], indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 # ---- NotebookLM ----
