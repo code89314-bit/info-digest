@@ -1085,6 +1085,13 @@ assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 9, 0), used=2) == 1
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9, 0), used=2) == 0   # 水曜は水曜号の分
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
+# Google に断られたら: 60分おきにやり直し、22:00 を過ぎるなら諦める
+assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 8, 0)) == dt.datetime(2026, 11, 19, 9, 0)
+assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 21, 30)) is None
+assert qa_deep.rate_limit_retry_at({}, dt.datetime(2026, 11, 19, 23, 30)) is None   # 日をまたぐ
+assert qa_deep.rate_limit_retry_at({"rate_limit_retry_minutes": 30, "rate_limit_give_up": "23:00"},
+                                   dt.datetime(2026, 11, 19, 22, 15)) == dt.datetime(2026, 11, 19, 22, 45)
+assert qa_deep.notebook_settings({}, {}, "x")["rate_limit_wait_minutes"] == []   # その場では待たない
 # 執筆のスレッドの名前: 持ち込んだ会話の最後の行（話した人の名前は外す）
 tn = qa_bot.QABot.thread_name("ルナ: どんな話？\nあなた: 夜の学校で二人きりの話を書いて")
 assert tn.startswith("✍️ ") and tn.endswith(" 夜の学校で二人きりの話を書いて")

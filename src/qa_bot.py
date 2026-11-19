@@ -1040,6 +1040,8 @@ class QABot(discord.Client):
         self.notebooks[qid] = nb
         if await self.try_audio():
             return
+        if any(p["qid"] == qid and p.get("retry_at") for p in load_state(STATE).get("pending") or []):
+            return   # 上限に当たった知らせはもう出した
         await thread.send("🎧 音声は、NotebookLM の1日の作成枠に空きができたら作ってここに貼ります（note の下書きにも追加します）。")
 
     # ---- 音声（枠が空いたら） ----
@@ -1062,12 +1064,15 @@ class QABot(discord.Client):
             if not pending:
                 return made
             item = pending[0]
+            if item.get("retry_at") and dt.datetime.now() < dt.datetime.fromisoformat(item["retry_at"]):
+                return made   # Google に断られて待っているところ（ほかの件も同じく断られるので順番は守る）
             nb = self.notebooks.get(item["qid"]) or podcast_nlm.Notebook.attach(
                 qa_deep.notebook_settings(self.cfg, qa_deep.load_style(self.cfg), item["title"]), item["nb"])
             if qa_deep.audio_slots(nb.pod, self.cfg) <= 0:
                 return made
             thread = self.get_channel(item["thread"]) or await self.fetch_channel(item["thread"])
-            await thread.send("🎧 音声を作っています（15〜20分）…")
+            if not item.get("retry_at"):   # やり直しのたびには知らせない
+                await thread.send("🎧 音声を作っています（15〜20分）…")
             style = qa_deep.load_style(self.cfg)
             try:
                 got = await asyncio.to_thread(qa_deep.add_audio, nb, style, item["title"], item["qid"],
@@ -1077,7 +1082,26 @@ class QABot(discord.Client):
                                   + "".join(f"\n-# 未完了: {t}" for t in got["todo"]),
                                   file=discord.File(got["small"]))
             except Exception as ex:   # noqa: BLE001
-                await thread.send(f"🎧 音声を作れませんでした: {str(ex)[:300]}")
+                retry = qa_deep.rate_limit_retry_at(self.cfg) if "RateLimit" in str(ex) else None
+                if retry:   # Google の回数制限。ノートは残して、あとでやり直す
+                    log.info("audio %s: RateLimit, retry at %s", item["qid"], retry.strftime("%H:%M"))
+                    if not item.get("retry_at"):
+                        mins = int(self.cfg.get("rate_limit_retry_minutes", 60))
+                        await thread.send(f"🎧 NotebookLM の音声の上限に当たりました（数時間で戻ります）。"
+                                          f"{mins}分おきにやり直して、できたらここに貼ります"
+                                          f"（{self.cfg.get('rate_limit_give_up', '22:00')} まで）。")
+                    state = load_state(STATE)
+                    for p in state.get("pending") or []:
+                        if p["qid"] == item["qid"]:
+                            p["retry_at"] = retry.isoformat()
+                    save_state(STATE, state)
+                    self.notebooks[item["qid"]] = nb
+                    return made
+                if "RateLimit" in str(ex):
+                    await thread.send(f"🎧 音声を作れませんでした: NotebookLM の音声の上限が"
+                                      f" {self.cfg.get('rate_limit_give_up', '22:00')} までに戻りませんでした。")
+                else:
+                    await thread.send(f"🎧 音声を作れませんでした: {str(ex)[:300]}")
             await asyncio.to_thread(nb.close)
             self.notebooks.pop(item["qid"], None)
             state = load_state(STATE)

@@ -804,6 +804,10 @@ qa_bot:
     - {weekday: 2, until: "09:30", n: 1}   # 水曜号 7:00（weekday: 0=月 … 6=日。2026-10-29 に 22:00 から移動）
   # 音声待ちを確認する間隔（分）
   audio_check_minutes: 20
+  # Google に「作りすぎ」（RateLimit）と断られたとき: 何分おきにやり直すか、何時で諦めるか。
+  #   Google の音声の上限は量で決まり、約5時間で戻る（2026-11-19 本人の観察）。朝のルーチンのあとは午後になることが多い
+  rate_limit_retry_minutes: 60
+  rate_limit_give_up: "22:00"
   notebook: {}
   note_post:
     enabled: true
