@@ -618,6 +618,15 @@ import contextlib  # noqa: E402
 
 import note_publish  # noqa: E402
 
+# お祝いの画面で止まったとき: 編集画面のURLから記事のURLを聞く（聞けなければ編集画面のURLのまま）
+import requests as _rq  # noqa: E402
+_rq_get = _rq.get
+_rq.get = lambda url, timeout=30: type("R", (), {"json": lambda self: {"data": {"note_url": "https://note.com/u/n/nabc123"}}})()
+assert note_publish.published_url("https://editor.note.com/notes/nabc123/publish/") == "https://note.com/u/n/nabc123"
+_rq.get = lambda url, timeout=30: (_ for _ in ()).throw(OSError("offline"))
+assert note_publish.published_url("https://editor.note.com/notes/nabc123/publish/") == "https://editor.note.com/notes/nabc123/publish/"
+_rq.get = _rq_get
+
 CALLS = []
 note_publish._profile_lock = contextlib.nullcontext
 note_publish._save_draft = lambda *a, **k: CALLS.append(k.get("publish_tags")) or ("https://n/x", [], False)
