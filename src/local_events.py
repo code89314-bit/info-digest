@@ -364,8 +364,9 @@ def summary_sections(items: list[dict], today: dt.date) -> list[tuple[str, list[
     entries = sorted([r for r in items if open_entry(r)],
                      key=lambda r: (_d(r, "deadline") is None, _d(r, "deadline") or today))
     events = [r for r in items if r["kind"] == "event" and end(r) and end(r) >= today]
-    now = sorted([r for r in events if _d(r, "date") <= today], key=end)
-    later = sorted([r for r in events if _d(r, "date") > today], key=lambda r: _d(r, "date"))
+    # 終わる日だけ分かるもの（「〜11/30まで」）は開催中に入れる（date が無くて比べられず止まった 2026-11-20）
+    now = sorted([r for r in events if not _d(r, "date") or _d(r, "date") <= today], key=end)
+    later = sorted([r for r in events if _d(r, "date") and _d(r, "date") > today], key=lambda r: _d(r, "date"))
     undated = [r for r in items if r["kind"] == "event" and not end(r)]
     # 還元キャンペーン: 終わっていないもの（終了日の近い順。終了日が分からないものは後ろ）
     camps = sorted([r for r in items if r["kind"] == "campaign" and (not end(r) or end(r) >= today)],
@@ -397,8 +398,8 @@ def summary_line(r: dict, today: dt.date) -> str:
     if d0 and d0 not in (st, dl):
         rows.append(("  - 期間 " if r["kind"] == "campaign" else "  - 開催 ") + fmt_day(d0)
                     + (f"〜{fmt_day(d1)}" if d1 and d1 != d0 else ""))
-    elif d1 and r["kind"] == "campaign":
-        rows.append(f"  - 期間 〜{fmt_day(d1)}")
+    elif d1 and (r["kind"] == "campaign" or not d0):
+        rows.append(("  - 期間 " if r["kind"] == "campaign" else "  - 開催 ") + f"〜{fmt_day(d1)}")
     if r.get("place"):
         rows.append(f"  - 場所 {r['place']}")
     if r.get("note"):

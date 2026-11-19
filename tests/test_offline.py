@@ -859,6 +859,10 @@ secs = dict(local_events.summary_sections(SUM_ITEMS, D))
 names = {k.split()[0]: [r["name"] for r in v] for k, v in secs.items()}
 assert names["✍️"] == ["締切前", "締切不明"] and names["🎪"] == ["開催中"] and names["🗓️"] == ["土曜", "来週"]
 assert names["❔"] == ["日付なし"]                                           # 終わったもの・お店は入れない
+# 終わる日だけ分かるイベント（「〜11/30まで」）は開催中に（date が無くて止まった 2026-11-20）
+UNTIL = REC(name="月末まで展示", date_end="2026-11-30")
+assert [r["name"] for r in dict(local_events.summary_sections([UNTIL], D))["🎪 開催中（終わる日の近い順）"]] == ["月末まで展示"]
+assert "  - 開催 〜11/30(月)" in local_events.summary_line(UNTIL, D)
 CAMPS = [REC(kind="campaign", name="終了", date_end="2026-11-03"), REC(kind="campaign", name="月末まで", date_end="2026-11-30"),
          REC(kind="campaign", name="来週から", date="2026-11-10", date_end="2026-11-20"), REC(kind="campaign", name="期間不明")]
 camp = dict(local_events.summary_sections(CAMPS, D))["💰 キャッシュレスの還元・キャンペーン（終わる日の近い順）"]
