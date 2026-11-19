@@ -110,10 +110,10 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
   - `llm.dedupe: true` で、出典違いの同じ出来事を最後にLLMで1件にまとめる（全区画共通）。
   - `podcast.summarize: true`: 選別だけ Strata。選んだ記事のURLを NotebookLM に読ませ、見出し・要約（`ask` 1回＋途中で切れた分の聞き直し1回）と動向まとめ（`ask` 1回）を NotebookLM が書く。同じノートで音声も作る。NotebookLM が使えなければ Strata の要約で投稿。
   - **podcast**（`src/podcast_nlm.py`）: NotebookLM（`E:\onco_tekisei` と同じ notebooklm-py・認証・1日上限台帳 `audio_usage.json`）で音声概要を作り、ffmpeg で10MB以下に圧縮して Discord に添付。失敗時は理由を1行投稿。
-  - タスク「info-digest onco」毎日 6:30（学習 6:00 の後。NotebookLM の認証延命は 5:30）。
+  - タスク「info-digest onco」毎日 6:00（2026-11-19 に 6:30 から。学習 4:00 の後。NotebookLM の認証延命は 5:30）。
   - 既知の限界: Strata の Q2_0 量子化モデルは、要約に中国語の字体や英語が混ざることがある。
   - **2026-10-21 週単位・曜日テーマに変更**（`src/onco_news.py`、タスクは `-Module onco_news`）: 毎日 Strata が選別・分類して `state/onco_archive.json` にためる（投稿なし。安全性情報で score≥4 だけ即日テキスト）。`onco.schedule` で 月 新薬 / 火 治療ストラテジー / 水 ガイドライン / 木 治験 / 金 安全性・行政 / 土 週間まとめ / 日 休み。その曜日は直近7日のアーカイブを NotebookLM に読ませて、トピック抽出まとめ＋要約＋podcast。テーマの記事が `episode.min_items` 未満の週は作らない。国内ソースに薬事日報・AnswersNews・QLifePro を追加（国内RSSはがん関連が少なく、国内の拡充は②学習番組のクロールと合わせて行う）。
-  - ②**学習番組** 実装済み（`src/learn.py`、`config.yaml` の `learn`、タスク「info-digest learn」毎日 6:00）。Strata が categories×seeds から学習テーマ（title / core / research）を作って `state/learn.json` に蓄え、毎日1つ選んで NotebookLM のウェブ調査（`source add-research --mode fast --import-all`）で一次資料を集め、要点を投稿＋podcast。PMDA 検索・DuckDuckGo・Bing のスクレイピングは使えなかったので、資料探しは NotebookLM に任せた。`ai_digest.ja_fix()` で Strata 出力の簡体字を日本語に置換。
+  - ②**学習番組** 実装済み（`src/learn.py`、`config.yaml` の `learn`、タスク「info-digest learn」毎日 4:00。2026-11-19 に 6:00 から変更し、Discord への投稿は `learn.post_at` の 5:50 まで待つ）。Strata が categories×seeds から学習テーマ（title / core / research）を作って `state/learn.json` に蓄え、毎日1つ選んで NotebookLM のウェブ調査（`source add-research --mode fast --import-all`）で一次資料を集め、要点を投稿＋podcast。PMDA 検索・DuckDuckGo・Bing のスクレイピングは使えなかったので、資料探しは NotebookLM に任せた。`ai_digest.ja_fix()` で Strata 出力の簡体字を日本語に置換。
   - **NotebookLM の認証**: notebooklm-py を 0.8.5 に更新（NotebookLM が notebook.google.com に移り 0.3.4 は動かない）。ブラウザログインの Cookie は数時間で切れるため、`notebooklm login --master-token --account <email>` で長期のマスタートークンを作成済み（`~/.notebooklm/profiles/default/master_token.json`、パスワード相当の機密）。`podcast_nlm.ensure_auth()` は使う直前に毎回 `notebooklm auth refresh` で Cookie を発行し直す。Chrome の Cookie 読み取り（`--browser-cookies chrome`）は app-bound 暗号化のため管理者権限が必要で不採用。
   - （当初の計画メモ）②**学習番組**。Strata が公開情報（PMDA の RMP・適正使用ガイド資材、国内学会の治療ガイドライン、治療の変遷）を巡回してテーマ候補を作り、毎日ランダムに1つ選んで「情報の核」と一次資料（論文・メーカー資料・ガイドライン）のリンクを集め、NotebookLM で掘り下げ podcast を作る。扱ったテーマは記録して繰り返さない。音声はニュース1＋学習1で1日2本（上限3本）。PMDA の RMP 一覧は JS 描画で単純取得できないので要調査。
 
@@ -229,7 +229,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 流れ: チャンネルに疑問を書く → スレッドを作って返信 → Strata が患者情報を確認（疑わしければ外部に送らず、言い換え案を返して止める）
   → Strata が解釈・論点・検索語 → NotebookLM のウェブ調査＋検索（一次資料のドメインだけ）→ NotebookLM が論点ごとに「結論→根拠→注意→出典」
   → 確認メモ → note に下書き保存（トップ画像は `make_cover.make_cover_gimon`）→ スレッドに要約・md/html・note のURL。
-- 音声: NotebookLM の1日3本の枠に空きがあるときだけ（`audio_reserve` で学習・ニュース・水曜号の分を空けておく）。
+- 音声: NotebookLM の1日の枠（台帳で5本。2026-11-19 に3本から）に空きがあるときだけ（`audio_reserve` で学習・ニュース・水曜号の分を空けておく）。Google に断られたら、直近5時間でいちばん古い生成＋5時間にやり直す（`rate_limit_*`）。
   無ければノートを残して待ち（`.local/state/qa_bot.json` の pending）、20分おきに確認して、作ったらスレッドに貼り note の下書きにも埋め込む。
 - 受け付けるのは Bot の持ち主（開発者ポータルの Owner）の書き込みだけ。
 - 必要: `.env` に `DISCORD_BOT_TOKEN` と `DISCORD_QA_CHANNEL_ID`、開発者ポータルで Message Content Intent を ON、`pip install discord.py`。

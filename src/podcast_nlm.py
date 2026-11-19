@@ -353,25 +353,34 @@ def compress(src: Path, dst: Path, max_mb: float, ffmpeg: str) -> float:
 
 
 def run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None = None,
-        avatar_url: str | None = None) -> Path | None:
+        avatar_url: str | None = None, before_post=None) -> Path | None:
     """podcast を作って添付する。notebook を渡せば要約に使ったノートをそのまま使う（最後に削除）。
 
     どこで失敗してもダイジェスト本体には影響させない。作れたら圧縮前の mp3 のパスを返す（note に貼る用）。
+    before_post: Discord に最初に書き込む直前に1回だけ呼ぶ（投稿の時刻まで待つ・先に要点を出す など）。
     """
     try:
-        return _run(picked, pod, webhook=webhook, username=username, notebook=notebook, avatar_url=avatar_url)
+        return _run(picked, pod, webhook=webhook, username=username, notebook=notebook, avatar_url=avatar_url,
+                    before_post=before_post)
     finally:
         if notebook:
             notebook.close()
 
 
 def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None,
-         avatar_url: str | None = None) -> Path | None:
+         avatar_url: str | None = None, before_post=None) -> Path | None:
+    pending = [before_post] if before_post else []
+
+    def ready() -> None:   # 最初の投稿の前に1回だけ
+        while pending:
+            pending.pop()()
+
     if os.environ.get("DRY_RUN") == "1":
         print(f"---- DRY_RUN (podcast) ---- {len(picked)}件から NotebookLM で音声を作る予定（実行はしない）")
         return
     limit = int(pod.get("daily_limit", 3))
     if used_today(pod) >= limit:
+        ready()
         post_discord(webhook, username=username, avatar_url=avatar_url,
                      content=f"🎧 今日の podcast は作りませんでした（NotebookLM の音声は1日{limit}本まで。上限に達しています）")
         return
@@ -392,6 +401,7 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
         else:
             notebook.audio(raw)
         secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
+        ready()
         post_discord_file(webhook, small, username=username, avatar_url=avatar_url,
                           content=f"🎧 **{pod.get('label') or '今日のニュース podcast'}**"
                                   f"（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")
@@ -406,4 +416,5 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
             waits = pod.get("rate_limit_wait_minutes") or []
             why = ("NotebookLM が音声の作成を断りました（Google 側の回数制限）"
                    + (f"。{'・'.join(f'{m}分' for m in waits)}待ってやり直しても駄目でした" if waits else ""))
+        ready()
         post_discord(webhook, username=username, avatar_url=avatar_url, content=f"🎧 今日の podcast は作れませんでした: {why}")

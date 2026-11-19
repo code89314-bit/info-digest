@@ -37,10 +37,11 @@ Add 'StrataLLMMode'   (Ps 'D:\Strata\scripts\llm-mode.ps1' '') $null (New-TimeSp
 # ---- morning digests (Strata answers one request at a time; they queue up) ----
 Add 'info-digest AI'        (Ps $digest '') (New-ScheduledTaskTrigger -Daily -At '05:30') $h4
 Add 'info-digest AI global' (Ps $digest '-Section ai_global') (New-ScheduledTaskTrigger -Daily -At '05:35') $h4
-Add 'info-digest learn'     (Ps $digest '-Module learn -Section learn') (New-ScheduledTaskTrigger -Daily -At '06:00') $h4
-Add 'info-digest onco'      (Ps $digest '-Module onco_news -Section onco') (New-ScheduledTaskTrigger -Daily -At '06:30') $h4
+# learn starts at 04:00 so its NotebookLM audio is done early; it waits and posts to Discord at learn.post_at (05:50)
+Add 'info-digest learn'     (Ps $digest '-Module learn -Section learn') (New-ScheduledTaskTrigger -Daily -At '04:00') $h4
+Add 'info-digest onco'      (Ps $digest '-Module onco_news -Section onco') (New-ScheduledTaskTrigger -Daily -At '06:00') $h4
 Add 'info-digest news'      (Ps $digest '-Section news') (New-ScheduledTaskTrigger -Daily -At '06:50') $h4
 
 # ---- note drafts ----
 Add 'info-digest note'       (Ps $digest '-Module note_weekly -Section note_weekly') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At '07:00') $h3
-Add 'info-digest note hoken' (Ps $digest '-Module note_hoken -Section note_hoken') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At '07:00') $h3
+Add 'info-digest note hoken' (Ps $digest '-Module note_hoken -Section note_hoken') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At '08:00') $h3

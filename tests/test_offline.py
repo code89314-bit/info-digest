@@ -371,6 +371,24 @@ podcast_nlm.record_use(pod)
 assert podcast_nlm.used_today(pod) == 2
 assert len(podcast_nlm.recent_times(hours=1)) == 2   # 作った時刻も残る
 assert podcast_nlm.recent_times(podcast_nlm.dt.datetime.now() + podcast_nlm.dt.timedelta(hours=6), hours=5) == []
+# 投稿の時刻まで待つ（学習は 4:00 に作り 5:50 に投稿）
+import common  # noqa: E402
+_n = podcast_nlm.dt.datetime(2026, 11, 20, 4, 30)
+assert common.seconds_until("05:50", _n) == 80 * 60
+assert common.seconds_until("05:50", _n.replace(hour=6)) == 0 and common.seconds_until(None, _n) == 0
+# before_post は最初の投稿の前に1回だけ（上限で作らない日も、要点を先に出してから知らせる）
+CALLS = []
+orig_post = podcast_nlm.post_discord
+podcast_nlm.post_discord = lambda *a, **k: CALLS.append("post")
+full = TMP / "full_ledger.json"
+full.write_text('{"%s": 3}' % podcast_nlm.dt.date.today().isoformat(), encoding="utf-8")
+_dry = os.environ.pop("DRY_RUN", None)
+podcast_nlm._run([], {"ledger": str(full), "daily_limit": 3}, webhook="X", username="u", notebook=None,
+                 before_post=lambda: CALLS.append("summary"))
+if _dry is not None:
+    os.environ["DRY_RUN"] = _dry
+podcast_nlm.post_discord = orig_post
+assert CALLS == ["summary", "post"], CALLS
 txt = podcast_nlm.source_text([{"title_ja": "新薬X", "tag": "新薬・承認", "source": "PMDA", "link": "https://ex.com/x",
                                  "summary_ja": "要約", "title": "X approved", "summary": "body"}], "がん 2026")
 assert "https://ex.com/x" in txt and "X approved" in txt and "新薬X" not in txt   # LLMの日本語は入れない

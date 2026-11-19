@@ -420,7 +420,7 @@ news:
       url: https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml
 
 # ==== がん薬物療法ニュース（国内中心・週単位・曜日テーマ）====
-# src/onco_news.py が動かします（タスク「info-digest onco」毎日 6:30）。
+# src/onco_news.py が動かします（タスク「info-digest onco」毎日 6:00。2026-11-19 に 6:30 から変更）。
 #   毎日: 新着を Strata が選別・分類して「週間アーカイブ」にためる（投稿しない。急ぎの安全性情報だけ即日投稿）
 #   曜日: 直近1週間のアーカイブから、その曜日のテーマの記事を NotebookLM に読ませて、まとめ＋podcast を投稿
 # llm: を書かなければ ai_digest の llm と同じサーバー・モデルを使います。
@@ -542,7 +542,9 @@ onco:
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     # 音声の1日上限（適正使用ガイド用の onco_tekisei と同じ台帳で合算）
     ledger: 'E:\onco_tekisei\audio_usage.json'
-    daily_limit: 3
+    # 2026-11-19 に 3 → 5（本人の判断）。Google の上限は約5時間で戻るので、時間をずらせば1日に3本より多く作れる。
+    #   断られたときは qa_bot.rate_limit_* の決まりでやり直す
+    daily_limit: 5
     # 枠が残っていても Google が「作りすぎ」と断ることがある。そのときは何分待ってやり直すか（空なら諦める）
     rate_limit_wait_minutes: [30, 60]
 
@@ -577,7 +579,8 @@ onco:
       url: https://www.cancernetwork.com/rss
 
 # ==== がん薬物療法 学習番組（毎日1テーマを掘り下げる podcast）====
-# src/learn.py が動かします（タスク「info-digest learn」毎日 6:30）。
+# src/learn.py が動かします（タスク「info-digest learn」毎日 4:00。Discord への投稿は post_at の時刻）。
+#   2026-11-19 に 6:00 から変更: NotebookLM の音声の上限（約5時間で戻る）を朝のうちに使い切らないよう、早く作っておく。
 #   Strata: 下の categories（カテゴリと種リスト）から具体的な学習テーマを作って蓄える（テーマ帳）
 #   毎日: 未消化のテーマを1つランダムに選び、NotebookLM のウェブ調査で一次資料を集めて、要点の投稿と podcast
 # 種リスト（seeds）は自由に足し引きできます。扱ったテーマは繰り返しません。
@@ -586,6 +589,8 @@ learn:
   icon: 📚
   avatar_url: https://raw.githubusercontent.com/code89314-bit/info-digest/main/assets/learn.png?v=2
   webhook_env: DISCORD_WEBHOOK_ONCO
+  # Discord に書き込む時刻（要点と音声は 4:00 から作っておき、この時刻まで待って投稿する。空なら出来しだい投稿）
+  post_at: "05:50"
   notice: NotebookLM がウェブ上の資料から自動で作成しています。誤りを含む可能性があります。判断は添付文書・ガイドライン原文で確認してください。
   audience: 病院薬剤師・がん専門薬剤師
   # 要点の最大文字数
@@ -641,10 +646,10 @@ learn:
     cli_path_add: '%APPDATA%\Python\Python310\Scripts'
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     ledger: 'E:\onco_tekisei\audio_usage.json'
-    daily_limit: 3
+    daily_limit: 5                      # 上の onco.podcast と同じにする（台帳は共通）
     rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
-# ==== note 毎日の記事「がん薬物療法ニュース」（6:30 の回をそのまま note に公開） ====
+# ==== note 毎日の記事「がん薬物療法ニュース」（6:00 の回をそのまま note に公開） ====
 # src/note_daily.py が動かします（onco_news.py が曜日の回を Discord に投稿したあとに続けて呼ぶ。タスクの追加は不要）。
 #   動向まとめ・記事ごとの要約・podcast（音声）を1本の記事にして、note に下書き保存 → チェックに通れば公開します。
 #   チェックに通らない日（NotebookLM が使えずローカルのモデルの要約だった、出典URLが無い、音声を貼れなかった など）は
@@ -654,7 +659,7 @@ note_daily:
   enabled: true
   # true: チェックに通れば自動で公開する。false: 毎日 下書き保存まで（公開は手で）
   publish: true
-  # 作らない曜日（土曜は 7:00 の週刊号に任せる。日曜は 6:30 の回自体が休み）
+  # 作らない曜日（土曜は 7:00 の週刊号に任せる。日曜は 6:00 の回自体が休み）
   skip_days: [土]
   title: note 毎日のニュース
   # 通知先の Webhook URL を入れる環境変数の名前（値は .env に書く）
@@ -744,7 +749,7 @@ note_weekly:
     # true（画面なし）は note のエディタの読み込みが終わらず失敗する（2026-10-21 確認）
     headless: false
 
-# ==== note 水曜号「保険と公費のギモン」（src/note_hoken.py、タスク「info-digest note hoken」毎週水曜 7:00） ====
+# ==== note 水曜号「保険と公費のギモン」（src/note_hoken.py、タスク「info-digest note hoken」毎週水曜 8:00。2026-11-19 に 7:00 から変更） ====
 # 行政資料（疑義解釈・通知・事務連絡）から Strata がテーマを決め、NotebookLM が Q&A と音声を作り、note に下書き保存する
 note_hoken:
   enabled: true
@@ -798,10 +803,10 @@ qa_bot:
   max_extra_sources: 10
   cover_image: true
   out_dir: .local/qa
-  # NotebookLM の音声は1日3本（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
+  # NotebookLM の音声は1日5本まで（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
   audio_reserve:
-    - {until: "07:30", n: 2}               # 学習 6:00・ニュース 6:30
-    - {weekday: 2, until: "09:30", n: 1}   # 水曜号 7:00（weekday: 0=月 … 6=日。2026-10-29 に 22:00 から移動）
+    - {until: "08:00", n: 2}               # 学習 4:00・ニュース 6:00（ギモン深堀りの音声は 8:00 から）
+    - {weekday: 2, until: "10:30", n: 1}   # 水曜号 8:00（weekday: 0=月 … 6=日。2026-11-19 に 7:00 から移動）
   # 音声待ちを確認する間隔（分）
   audio_check_minutes: 20
   # Google に「作りすぎ」（RateLimit）と断られたとき、いつやり直すか。
@@ -869,9 +874,9 @@ strata_chat:
     schedule:
       - {at: "05:30", minutes: 15, name: AI}
       - {at: "05:35", minutes: 25, name: AI global}
-      - {at: "06:00", minutes: 60, name: 学習}
-      - {at: "06:30", minutes: 60, name: がん薬物療法}
-      - {at: "07:00", minutes: 90, name: note hoken, weekdays: [2]}   # 2026-10-29 に 22:00 から朝へ
+      - {at: "04:00", minutes: 120, name: 学習}       # 4:00 に作り、5:50 に投稿（2026-11-19 から）
+      - {at: "06:00", minutes: 60, name: がん薬物療法}
+      - {at: "08:00", minutes: 90, name: note hoken, weekdays: [2]}   # 2026-11-19 に 7:00 から 8:00 へ
       - {at: "07:00", minutes: 90, name: note, weekdays: [5]}
   # ルナの絵（ComfyUI の MOSS-Image。src/comfy_client.py）。プロンプトは .local/luna/prompts/*.json に残す
   moss:

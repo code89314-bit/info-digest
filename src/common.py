@@ -52,6 +52,24 @@ def save_state(name: str, state: dict) -> None:
         json.dump(state, f, ensure_ascii=False, indent=1, sort_keys=True)
 
 
+def seconds_until(hhmm: str | None, now=None) -> float:
+    """今日の hh:mm まであと何秒か（過ぎていれば・指定が無ければ 0）。"""
+    import datetime as dt
+    if not hhmm:
+        return 0.0
+    now = now or dt.datetime.now()
+    h, m = (int(x) for x in str(hhmm).split(":"))
+    return max(0.0, (now.replace(hour=h, minute=m, second=0, microsecond=0) - now).total_seconds())
+
+
+def wait_until(hhmm: str | None) -> None:
+    """Discord に書き込む時刻まで待つ（早朝の作業を先に済ませて、通知だけ遅らせる）。"""
+    sec = seconds_until(hhmm)
+    if sec > 0:
+        print(f"{hhmm} まで待ってから投稿します")
+        time.sleep(sec)
+
+
 def trim_seen(seen: list, keep: int = 2000) -> list:
     """既読IDリストが無限に増えないよう末尾だけ残す。"""
     return seen[-keep:]
