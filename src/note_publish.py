@@ -19,6 +19,7 @@ import contextlib
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -274,11 +275,29 @@ def _press_publish(page, tags: list[str]) -> str:
     page.get_by_role("button", name="投稿する", exact=True).first.click()
     end = time.time() + 120
     while time.time() < end and "/publish/" in page.url:   # 投稿が終わると記事のページへ移る
+        # 「5日連続投稿！」などのお祝いの画面が出ると、公開できていても記事のページへ移らない（2026-11-20）
+        if page.get_by_text("記事が公開されました").count():
+            _shot(page, "published")
+            return published_url(page.url)
         page.wait_for_timeout(2000)
     if "/publish/" in page.url:
         raise RuntimeError("「投稿する」のあと画面が変わりませんでした（公開されたか note で確認してください）")
     page.wait_for_timeout(3000)
     return page.url
+
+
+def published_url(edit_url: str) -> str:
+    """編集画面のURL（editor.note.com/notes/<記事のキー>/…）から、公開した記事のURLを note に聞く。
+    聞けなければ編集画面のURLのまま。"""
+    m = re.search(r"/notes/(n[0-9a-z]+)", edit_url)
+    if not m:
+        return edit_url
+    try:
+        import requests
+        r = requests.get(f"https://note.com/api/v3/notes/{m.group(1)}", timeout=30)
+        return (r.json().get("data") or {}).get("note_url") or edit_url
+    except Exception:   # noqa: BLE001
+        return edit_url
 
 
 @contextlib.contextmanager
