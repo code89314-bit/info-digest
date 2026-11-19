@@ -8,7 +8,7 @@
 # up to -WaitMinutes, then run anyway: ai_digest.py falls back to keyword matching by itself.
 #   -Module onco_news -Section onco: weekly oncology news (collect daily, themed episode per weekday)
 #   -Module note_weekly -Section note_weekly: weekly note draft (task "info-digest note", Sat 07:00)
-#   -Module note_hoken -Section note_hoken: Wednesday note draft (task "info-digest note hoken", Wed 07:00)
+#   -Module note_hoken -Section note_hoken: Wednesday note draft (task "info-digest note hoken", Wed 08:00)
 param([string]$Section = 'ai_digest', [string]$Module = 'ai_digest', [int]$WaitMinutes = 180)
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -34,7 +34,7 @@ if ($keyEnv) {
 Log "start (llm: $base)"
 # Scheduled jobs come first: while this runs, the Discord bot must not lend the GPU to Luna / ComfyUI
 # (src/gpu_mode.py reads this lock). If the bot holds the GPU now (luna-mode.flag), take it back to Strata.
-# One lock per section: jobs can overlap (note at 07:00 while onco from 06:30 still runs), and the first one
+# One lock per section: jobs can overlap (note at 07:00 while onco from 06:00 still runs), and the first one
 # to finish must not remove the lock of the other.
 $lock = Join-Path $root ('.local\state\llm_busy.' + $Section + '.lock')
 New-Item -ItemType Directory -Force (Split-Path $lock) | Out-Null
