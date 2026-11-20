@@ -30,6 +30,8 @@ NotebookLM の音声は、専門用語の読み間違いや、話者の入れ替
   `notebooklm source fulltext <資料ID> -n <ノートブックID> --json` → content を `research\fulltext\<ID>.txt` に保存して読む。
   統計・手引き・審査報告書のように、数字や経緯を拾う用途ならこちらで足りる。事実カードの出典には資料名を書く。
 - 上限に当たったら、その日はそれ以上聞かない（やり直しても断られる）。fulltext で進められるところまで進め、残りは翌日。
+- **回数は約5時間で戻る**（本人の判断 2026-11-21。音声の上限と同じ）。朝の定時（4:00 学習・6:00 ニュースの要約）もチャットを使うので、
+  その5時間前（23:00ごろ）以降に連載のために大量に聞かない。聞く時間帯は本人と決める。
 
 ## 使い方
 - `/series-script prep` … 次の週の準備: ノートブックを作って資料を入れ、構成表（plan.md）を書く。
@@ -110,6 +112,11 @@ notebooklm list --json         # 認証の確認
 - 声の割り当ては `style/series_voices.yaml`（engine → 照井・しらべ・わた の style id）。id は `tts_render.py --engine aivis --list`。
 - 試し: `.venv\Scripts\python.exe -I .claude\skills\series-script\scripts\tts_render.py .local\series\<週ID> 1 --engine aivis --lines 20`
   → `.local\series\<週ID>\audio\ep1-aivis-20lines.mp3`。台本の「よみ」を読ませる（漢字・略語の読み間違いを防ぐ）。
+- **Irodori-TTS v3**（D:\Docker\irodori、MIT。演出に強い: キャプションと絵文字 🤭⏸👌）: `scripts/tts_irodori.py <週のフォルダ> <n> [--lines 30]`。
+  GPU を使うので先に Strata を止める: `Set-Content D:\Strata\comfy-mode.flag ...` → `strata.cmd launch --stop --preset 'Qwen36 32K'`。
+  終わったら `strata.cmd launch --preset 'Qwen36 32K' --no-tui --yes` → flag を消す（llm-mode.ps1 は Docker を丸ごと止めるので使わない）。
+  3人の声は `.local\series\voices\irodori\{teru,shirabe,wata}.wav`（初回にキャプションから作る。作り直すときはこの wav を消す）。
+  パイロット版: 冒頭30行で約6分15秒、作成は数分。
 - 公開に使う声は、モデルごとの利用規約（商用・公開・クレジット表記）を確かめて series_voices.yaml の license に書く。
 - RAM がほぼ満杯なので、読み上げソフトは使うときだけ起動する。
 
