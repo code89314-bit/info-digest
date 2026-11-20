@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from tts_render import ROOT, SPEAKERS, parse  # noqa: E402
 
 API = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_VOICES = {"照井": "Charon", "しらべ": "Leda", "わた": "Orus"}
+DEFAULT_VOICES = {"照井": "Charon", "しらべ": "Leda", "わた": "Puck"}
 RATE = 24000          # Gemini TTS returns 24 kHz 16-bit mono PCM
 PROMPT = """以下は、日本の病院薬剤師向けの学習ポッドキャストの会話です。3人は気心の知れた仲間で、くつろいだ雰囲気で話しています。
 自然な日本語の会話として、抑揚・笑い・タメ・相づちをつけて読んでください。
@@ -37,7 +37,7 @@ PROMPT = """以下は、日本の病院薬剤師向けの学習ポッドキャ�
 - [笑] は短い自然な笑い、[間] はひと呼吸の間です。文字としては読まないでください。
 - 照井: 落ち着いた男性のがん専門薬剤師。話が乗ると熱が入る。
 - しらべ: 照井の部下の女性薬剤師。明るく、軽くつっこむ。
-- わた: 他の分野のベテラン男性薬剤師。丁寧で、少し控えめに質問する。
+- わた: 他の分野のベテラン男性薬剤師。普通の高さの声（低すぎない）。丁寧だが、ノリが良く明るく反応する。
 
 """
 
@@ -78,6 +78,21 @@ def voices() -> dict:
     return DEFAULT_VOICES
 
 
+TAGS = [("笑", "[laughing]"), ("驚", "[surprised]"), ("考え", "[thoughtful]"), ("不思議", "[curious]"),
+        ("楽し", "[cheerful]"), ("うれし", "[happy]"), ("からか", "[teasing]"), ("しみじみ", "[softly]"),
+        ("ゆっくり", "[slowly]"), ("言いよど", "[hesitating]"), ("明る", "[cheerful]"), ("さらっと", "[matter-of-fact]")]
+
+
+def tags(text: str) -> str:
+    """（演出）/[笑]/[間] -> inline tags for the newer Gemini TTS models."""
+    import re
+    m = re.match(r"^（([^）]*)）", text)
+    if m:
+        tag = next((t for k, t in TAGS if k in m.group(1)), "")
+        text = (tag + " " if tag else "") + text[m.end():]
+    return text.replace("[笑]", "[laughs]").replace("[間]", "[pause]").replace("🤭", "[laughs]").strip()
+
+
 def chunks(lines, max_lines: int = 10):
     """Cut into chunks with at most 2 distinct speakers (and at most max_lines lines)."""
     out, cur = [], []
@@ -94,20 +109,34 @@ def chunks(lines, max_lines: int = 10):
 
 def synth(chunk, model: str, key: str, vmap: dict) -> bytes:
     spk = sorted({s for s, _, _ in chunk}, key=SPEAKERS.index)
-    text = PROMPT + "\n".join(f"{s}: {t}" for s, t, _ in chunk)
     if len(spk) == 2:
         speech = {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
             {"speaker": s, "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": vmap[s]}}} for s in spk]}}
     else:
         speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": vmap[spk[0]]}}}
-    body = {"contents": [{"parts": [{"text": text}]}],
-            "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": speech}}
+    if "3." in model:
+        # newer models: no developer instruction; one text part per line with speech_metadata.speaker.
+        # The script's directions become short inline tags (whether they work is checked by ear).
+        parts = [{"text": tags(t)} for _, t, _ in chunk]
+        if len(spk) == 2:
+            parts = [{"text": tags(t), "speechMetadata": {"speaker": s}} for s, t, _ in chunk]
+        body = {"contents": [{"parts": parts}]}
+    else:
+        body = {"contents": [{"parts": [{"text": PROMPT + "\n".join(f"{s}: {t}" for s, t, _ in chunk)}]}]}
+    body["generationConfig"] = {"responseModalities": ["AUDIO"], "speechConfig": speech}
     req = urllib.request.Request(f"{API}/models/{model}:generateContent", data=json.dumps(body).encode("utf-8"),
                                  headers={"x-goog-api-key": key, "Content-Type": "application/json"}, method="POST")
     for attempt in range(4):
         try:
             data = json.loads(urllib.request.urlopen(req, timeout=600).read())
-            return base64.b64decode(data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
+            cand = (data.get("candidates") or [{}])[0]
+            if "content" not in cand:      # sometimes an empty answer comes back; try again once
+                print(f"  empty answer ({cand.get('finishReason')}), retry", flush=True)
+                if attempt < 1:
+                    continue
+                sys.exit(f"Gemini returned no audio: {json.dumps(cand, ensure_ascii=False)[:200]}")
+            parts = cand["content"]["parts"]
+            return b"".join(base64.b64decode(p["inlineData"]["data"]) for p in parts if "inlineData" in p)
         except urllib.error.HTTPError as ex:
             msg = ex.read().decode("utf-8", "replace")[:300]
             if ex.code in (429, 500, 503) and attempt < 3:

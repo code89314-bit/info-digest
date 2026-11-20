@@ -116,7 +116,8 @@ notebooklm list --json         # 認証の確認
   GPU を使うので先に Strata を止める: `Set-Content D:\Strata\comfy-mode.flag ...` → `strata.cmd launch --stop --preset 'Qwen36 32K'`。
   終わったら `strata.cmd launch --preset 'Qwen36 32K' --no-tui --yes` → flag を消す（llm-mode.ps1 は Docker を丸ごと止めるので使わない）。
   3人の声は `.local\series\voices\irodori\{teru,shirabe,wata}.wav`（初回にキャプションから作る。作り直すときはこの wav を消す）。
-  パイロット版: 冒頭30行で約6分15秒、作成は数分。
+  パイロット版: 冒頭30行で約6分15秒、作成は数分。**本人の評価: 音質が悪く、雰囲気も寒い → 採用しない**（2026-11-21）。
+  次は Gemini の読み上げ（`scripts/tts_gemini.py`）を試す。
 - 公開に使う声は、モデルごとの利用規約（商用・公開・クレジット表記）を確かめて series_voices.yaml の license に書く。
 - RAM がほぼ満杯なので、読み上げソフトは使うときだけ起動する。
 
@@ -133,3 +134,9 @@ state.json の週に `episodes`（6 または 7）を記録する。
 - 認証エラー: `notebooklm auth refresh` → だめなら本人に `notebooklm login --master-token --account <本人のアカウント>` を頼む（メールアドレスを書かない）。
 - 「No result found for RPC ID」・混んでいる: 5〜10分おいて1回だけやり直す。だめなら報告して止める。
 - 音声の生成（`generate audio`）はこのスキルでは使わない（音声の枠を使わない）。
+
+## Gemini の読み上げのメモ（2026-11-21）
+- 使えるモデル: gemini-3.8-flash-tts（無料枠 1日10回）、gemini-2.5-flash-preview-tts（無料枠わずか）、gemini-2.5-pro-preview-tts（無料枠なし）。
+- 3.x のモデルは全体への指示文（systemInstruction）を受け付けず、台詞ごとに speechMetadata.speaker が要る。演出は台詞の中のタグ（[laughs] など）に置き換える（効くかは要確認）。
+- 1話（約100行）は話者2人ずつに区切って約40回の呼び出し。無料枠では足りず、従量課金の設定が要る（本人が決める）。
+- 声: 照井=Charon、しらべ=Leda、わた=Puck（本人: わたは低すぎない普通の高さ、丁寧だがノリが良い）。

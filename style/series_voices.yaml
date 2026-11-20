@@ -3,6 +3,10 @@
 # 公開に使う前に、声のモデルごとの利用規約（商用・公開・クレジット表記）を確かめて license に書く。
 #   aivis:    AivisSpeech（http://127.0.0.1:10101）
 #   voicevox: VOICEVOX（http://127.0.0.1:50021。公開時は「VOICEVOX:キャラクター名」のクレジット表記が要る）
+gemini:          # Gemini の読み上げ（tts_gemini.py）。声の名前は Google の既製の声
+  照井: {voice: Charon}     # 落ち着いた男性
+  しらべ: {voice: Leda}     # 若い女性
+  わた: {voice: Puck}       # 普通の高さで明るい男性（2026-11-21 本人: 低すぎない、丁寧だがノリが良い）
 aivis:
   # 照井: {id: 0, name: "", license: ""}     # 落ち着いた男性
   # しらべ: {id: 0, name: "", license: ""}   # 女性
