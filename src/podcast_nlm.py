@@ -33,7 +33,9 @@ def readings_note(path: Path = YOMI_FILE) -> str:
     except Exception:
         return ""
     pairs = [f"「{k}」は「{v}」" for k, v in d.items() if k and v]
-    return ("\n読み方: " + "、".join(pairs) + "と読む。") if pairs else ""
+    # 読み方は発音に使うだけ。番組の中で「〜と読みます」と説明・補足させない（2026-11-21 本人）
+    return ("\n（制作メモ。番組の中では触れないこと）次の言葉はこの読み方で発音する: " + "、".join(pairs) +
+            "。読み方についての説明や補足は、音声の中で一切しない。") if pairs else ""
 
 from common import ROOT, post_discord, post_discord_file
 
