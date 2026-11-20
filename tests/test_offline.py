@@ -670,6 +670,77 @@ LPOST = []
 learn.post_discord = lambda env, **k: LPOST.append(k)
 learn.episode({"podcast": {"enabled": True}}, st["catalog"][0], "DISCORD_WEBHOOK_ONCO", "学習")   # DRY_RUN: 表示だけ
 assert LPOST == []
+
+# 種（薬の名前）は config のまま見出しに入れる。言い換え・取り違えをしないよう伝える
+assert all(t["title"].startswith("薬A｜") for t in st["catalog"]) and "言い換えない" in TOPIC_PROMPTS[0]
+assert learn.named({"title": "レジメン選択", "seed": "肺癌診療ガイドライン（日本肺癌学会）"})["title"] == "肺癌診療ガイドライン｜レジメン選択"
+assert learn.named({"title": "ベージニオの下痢", "seed": "ベージニオ"})["title"] == "ベージニオの下痢"
+# 前の回と同じ種は避ける（ほかに無ければ同じでも選ぶ）
+SEEDS = {"catalog": [{"id": "a", "category": "c", "seed": "X", "title": "t1"},
+                     {"id": "b", "category": "c", "seed": "Y", "title": "t2"}], "done": [], "last_seed": "X"}
+assert all(learn.choose({}, SEEDS, random.Random(n))["seed"] == "Y" for n in range(5))
+SEEDS["done"] = ["b"]
+assert learn.choose({}, SEEDS, random.Random(0))["seed"] == "X"
+
+
+# 資料とテーマが合うかを NotebookLM に確かめる。合わなければ Mismatch、答えが読めなければそのまま
+class CheckNb:
+    def __init__(self, ans):
+        self.ans = ans
+
+    def ask(self, q):
+        assert "ベージニオ" in q
+        return self.ans
+
+
+BAD = {"seed": "ベージニオ", "title": "ベージニオ｜角膜障害", "core": "眼毒性"}
+try:
+    learn.check_topic(CheckNb('{"ok": false, "reason": "眼毒性はベランタマブの特徴"}'), BAD)
+    raise AssertionError("Mismatch にならない")
+except learn.Mismatch:
+    pass
+learn.check_topic(CheckNb('{"ok": true, "reason": "添付文書に記載"}'), BAD)
+learn.check_topic(CheckNb("よく分かりません"), BAD)
+
+# 復習の回: 7〜14日前のテーマから。復習済み・捨てたものは除く。曜日は review.weekday
+TODAY = dt.date(2026, 11, 22)   # 日曜
+RV = {"catalog": [{"id": i, "category": "c", "seed": "S", "title": f"t{i}", "core": "k"} for i in "abcde"],
+      "done": list("abcde"), "discarded": ["b"], "reviewed": ["c"],
+      "history": [{"id": "a", "date": "2026-11-01"}, {"id": "b", "date": "2026-11-12"}, {"id": "c", "date": "2026-11-13"},
+                  {"id": "d", "date": "2026-11-14"}, {"id": "e", "date": "2026-11-20"}]}
+RCFG = {"review": {"enabled": True, "weekday": "日", "min_days": 7, "max_days": 14}}
+r = learn.choose_review(RCFG, RV, random.Random(0), TODAY)
+assert r["id"] == "d" and r["review"] and r["title"] == "復習｜S｜td"
+RV["reviewed"].append("d")
+assert learn.choose_review(RCFG, RV, random.Random(0), TODAY)["id"] == "a"    # 範囲に無ければもっと前から
+assert learn.is_review_day(RCFG, TODAY) and not learn.is_review_day(RCFG, TODAY - dt.timedelta(days=1))
+assert not learn.is_review_day({"review": {"enabled": False, "weekday": "日"}}, TODAY)
+
+# 取り違えたテーマは捨てて、別のテーマでやり直す
+os.environ.pop("DRY_RUN")
+MST = {"catalog": [{"id": "m1", "category": "適正使用ガイド", "seed": "薬A", "title": "薬A｜x", "core": "k", "research": "r"},
+                   {"id": "m2", "category": "適正使用ガイド", "seed": "薬B", "title": "薬B｜y", "core": "k", "research": "r"}],
+       "done": []}
+EPIS = []
+
+
+def fake_episode(cfg, topic, webhook, title):
+    EPIS.append(topic["id"])
+    if len(EPIS) == 1:
+        raise learn.Mismatch("合わない")
+
+
+orig_ep, orig_load, orig_save, orig_refill = learn.episode, learn.load_state, learn.save_state, learn.refill
+learn.episode, learn.load_state, learn.refill = fake_episode, lambda s: MST, lambda *a: 0
+learn.save_state = lambda s, d: None
+orig_cfg = learn.ai_digest.section_config
+learn.ai_digest.section_config = lambda s: {"min_pending": 0, "max_tries": 3}
+learn.main([])
+os.environ["DRY_RUN"] = "1"
+learn.episode, learn.load_state, learn.save_state, learn.refill = orig_ep, orig_load, orig_save, orig_refill
+learn.ai_digest.section_config = orig_cfg
+assert len(EPIS) == 2 and set(EPIS) == {"m1", "m2"} and MST["discarded"] == [EPIS[0]]
+assert set(MST["done"]) == {"m1", "m2"} and MST["history"][0]["id"] == EPIS[1] and MST["last_seed"] in ("薬A", "薬B")
 print("✅ learn")
 
 assert ai_digest.ja_fix("转移性胰腺癌の随访と监测、推奨等级、患者分层") == "転移性膵癌のフォローアップとモニタリング、推奨等級、患者層別化"
