@@ -1,0 +1,13 @@
+# ==== 週の連載の声（読み上げソフトの話者。.claude/skills/series-script/scripts/tts_render.py が使う） ====
+# engine ごとに、照井・しらべ・わたの style id を書く。id は `tts_render.py --engine <engine> --list` で調べる。
+# 公開に使う前に、声のモデルごとの利用規約（商用・公開・クレジット表記）を確かめて license に書く。
+#   aivis:    AivisSpeech（http://127.0.0.1:10101）
+#   voicevox: VOICEVOX（http://127.0.0.1:50021。公開時は「VOICEVOX:キャラクター名」のクレジット表記が要る）
+aivis:
+  # 照井: {id: 0, name: "", license: ""}     # 落ち着いた男性
+  # しらべ: {id: 0, name: "", license: ""}   # 女性
+  # わた: {id: 0, name: "", license: ""}     # 落ち着いた男性（照井と聞き分けられる声）
+voicevox:
+  # 照井: {id: 0, name: "", license: ""}
+  # しらべ: {id: 0, name: "", license: ""}
+  # わた: {id: 0, name: "", license: ""}

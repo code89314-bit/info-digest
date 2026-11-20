@@ -104,6 +104,15 @@ notebooklm list --json         # 認証の確認
    読みがなを付けた語は `style/series_yomi.yaml` に足す（まだ無いものだけ。読みは資料ではなく一般的な読み。迷う語は「要確認」と書く）。
 6. `state.json` の done に n を足す。本人への報告: 台本の字数（≒分数）、使った資料の数、外した論点、要確認の読み。
 
+## 音声にする（読み上げソフト。試している途中）
+- 候補: **AivisSpeech**（ローカル・無料、:10101）と **VOICEVOX**（ローカル・無料、:50021）。同じ API なので `scripts/tts_render.py` で両方使える。
+  まず両方で第1回の冒頭を作って本人が聞き比べる（2026-11-20 本人が了承）。満足できなければ Azure の読み上げも比べる。
+- 声の割り当ては `style/series_voices.yaml`（engine → 照井・しらべ・わた の style id）。id は `tts_render.py --engine aivis --list`。
+- 試し: `.venv\Scripts\python.exe -I .claude\skills\series-script\scripts\tts_render.py .local\series\<週ID> 1 --engine aivis --lines 20`
+  → `.local\series\<週ID>\audio\ep1-aivis-20lines.mp3`。台本の「よみ」を読ませる（漢字・略語の読み間違いを防ぐ）。
+- 公開に使う声は、モデルごとの利用規約（商用・公開・クレジット表記）を確かめて series_voices.yaml の license に書く。
+- RAM がほぼ満杯なので、読み上げソフトは使うときだけ起動する。
+
 ## 回数は6〜7回（照井が時間を押すので）
 照井は時間を押しがちで、誰も止めない（persona.md）。各回を書き終えたら、話しきれずに回した論点を plan.md の
 次の回の頭に移す。積み残しが1回分ほどになったら、回を1つ増やして**全7回**にする（まとめは最終回）。
