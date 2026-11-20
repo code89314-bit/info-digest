@@ -42,7 +42,11 @@ notebooklm list --json         # 認証の確認
   週ID は `YYYYMMDD-<slugの英数字>`（準備した日付）。出力フォルダは `.local\series\<週ID>\`。
 - NotebookLM への質問は必ずノートブックを明示する: `notebooklm ask "<質問>" --notebook <ID> --json`。
   `--json` の `references`（`cited_text` と `source_id`）を保存する。資料の名前は `notebooklm source list --notebook <ID> --json`。
-- 長い質問はファイルに書いて渡してよい（`--prompt-file`。`notebooklm ask --help` で確かめる）。
+- 質問はまとめてファイルに書き（1問ずつ `---` の行で区切る）、`scripts/nlm_ask.py` で順に聞いて JSON に保存する:
+  `.venv\Scripts\python.exe -I .claude\skills\series-script\scripts\nlm_ask.py <ノートブックID> <質問.txt> <出力.json>`
+  （途中で止まっても、出力にある質問は飛ばして続きから聞く）。答えは長いので、読むときは JSON から answer だけ取り出す。
+- **バックアップ**: prep・各回が終わるたびに、週のフォルダと state.json を `.local\series\_backup\<週ID>-<日時>.zip` に固める
+  （`.local` は Git に入らないため）。スキル自体を直したときは、本人に断ってブランチにコミット・プッシュする。
 
 ## prep（週の準備）
 1. `config.yaml` の `series` を読み、週（title・type・notebook・drugs・scope）を決める。type は
@@ -55,11 +59,16 @@ notebooklm list --json         # 認証の確認
      審査報告書・適正使用ガイド・RMP、学会の診療ガイドライン、根拠の試験の論文）を優先と書く。
    - `drugs` があれば、薬ごとに fast の調査を足す（「<薬> 審査報告書 インタビューフォーム 適正使用ガイド PMDA」）。
    - 本人が置いた PDF（`.local\series\pdf\<slug>\` または `.local\guidelines\<notebook>\`）があれば `source add` で入れる。
-4. 資料を確かめる: `source list --json` で題名を見て、題材と関係ない資料（別の薬・別のがん種・個人ブログ・広告）は
-   `source delete` で消す。残りが 10件未満なら、調査を足すか、本人に知らせて止める。1冊の資料は50件まで。
+   - deep の調査は「this write could not be confirmed（IMPORT_RESEARCH のタイムアウト）」と出ても、実際には入っていることが多い
+     （2026-11-20 のパイロット版では24件入っていた）。やり直す前に必ず `source list` で確かめる（やり直すと重複する）。
+4. 資料を確かめる: `source list --json` で題名を見て、題材と関係ない資料（別の薬・別のがん種・個人ブログ・広告・患者向けの一般記事・
+   出版社の販売ページ）は `source delete <ID> -n <ノートブックID> -y` で消す。deep の調査が作る**まとめのレポート**
+   （調査の指示と同じような題の資料。AI が書いた要約で一次資料ではない）も消す。残りが 10件未満なら、調査を足すか、本人に知らせて止める。1冊の資料は50件まで。
 5. **構成表** `plan.md` を書く（形は `reference/arcs.md` の最後）。各回の範囲・聞くこと・冒頭の振り返りの問い・次回への橋渡し。
    構成表を作るための質問（全体像・年表・主な試験・ガイドラインの版）も NotebookLM に聞き、答えは `research\plan.json` に保存。
    `structure` で `notebook` があれば、その専門ノートにも聞く（ガイドラインの PDF が入っている）。保険の話は `hoken` に聞く。
+   **割れた意見の宝庫**: ガイドラインの解説にある「投票の内訳」（例: 強く推奨52%／弱く推奨48%）と、前の版から変わった点。
+   構成表を作るときに必ず聞き、しらべの見せ場として各回に割り当てる。
 6. `state.json` に週を記録する。本人への報告: 資料の数と主な資料、構成表の要約、気になった点（資料が薄い回など）。
 
 ## ep <n>（第n回）
