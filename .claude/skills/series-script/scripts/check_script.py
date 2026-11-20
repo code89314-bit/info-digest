@@ -23,7 +23,7 @@ def plain(t):
 tot = sum(len(spoken(ln)) for ln in lines)
 print(f"spoken chars: {tot}  (~{tot / 300:.1f} min, target ~6000 / 20 min)")
 print("share %:", {s: round(sum(len(spoken(ln)) for ln in lines if ln.startswith(s + ":")) / tot * 100) for s in SPEAKERS},
-      "(target 40/30/30)")
+      "(target teru 45-50 / shirabe 25-30 / wata 20-25)")
 run = mx = 1
 for a, b in zip(lines, lines[1:]):
     run = run + 1 if a.split(":")[0] == b.split(":")[0] else 1
@@ -32,6 +32,9 @@ print("max consecutive lines by one speaker:", mx, "(must be <= 2)")
 long_lines = [spoken(ln)[:30] for ln in lines if len(spoken(ln)) > 200]
 print("lines over 200 chars:", len(long_lines), long_lines)
 print("lines without a speaker label:", len(bad), [b[:30] for b in bad])
+wata = [ln for ln in lines if ln.startswith("わた:")]
+print("wata first-person (should be ~0):", sum(ln.count("俺") for ln in wata),
+      "| rough endings (だな/だ。/ダメ):", sum(bool(re.search(r"だな|だ。|ダメ|じゃないですか", ln)) for ln in wata))
 nums = lambda s: set(re.findall(r"\d+(?:\.\d+)?", s))
 for name, text in (("script", plain(script)), ("article", plain((d / f"ep{n}-article.md").read_text(encoding="utf-8"))
                                                          if (d / f"ep{n}-article.md").exists() else "")):
