@@ -22,6 +22,19 @@ import tempfile
 import time
 from pathlib import Path
 
+YOMI_FILE = Path(__file__).resolve().parent.parent / "style" / "nlm_yomi.yaml"
+
+
+def readings_note(path: Path = YOMI_FILE) -> str:
+    """style/nlm_yomi.yaml（表記: よみ）を、音声の指示に付ける1文にする。無ければ空。"""
+    try:
+        import yaml
+        d = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return ""
+    pairs = [f"「{k}」は「{v}」" for k, v in d.items() if k and v]
+    return ("\n読み方: " + "、".join(pairs) + "と読む。") if pairs else ""
+
 from common import ROOT, post_discord, post_discord_file
 
 SOURCE_WAIT = 600        # 資料1件の取込待ち（秒）
@@ -286,7 +299,7 @@ class Notebook:
 
     def audio(self, out_path: Path) -> None:
         pod = self.pod
-        args = ["generate", "audio", (pod.get("instructions") or "").strip(), "-n", self.nb,
+        args = ["generate", "audio", ((pod.get("instructions") or "").strip() + readings_note()).strip(), "-n", self.nb,
                 "--format", pod.get("format", "deep-dive"), "--length", pod.get("length", "default"),
                 "--language", pod.get("language", "ja"), "--retry", "2", "--json"]
         # 台帳では枠が残っていても、Google が「作りすぎ」（RateLimitError）と断ることがある。間をおいて作り直す
