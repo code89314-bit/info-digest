@@ -21,7 +21,7 @@ def plain(t):
 
 
 tot = sum(len(spoken(ln)) for ln in lines)
-print(f"spoken chars: {tot}  (~{tot / 300:.1f} min, target ~6000 / 20 min)")
+print(f"spoken chars: {tot}  (~{tot / 300:.1f} min, guide ~6000 / 20 min; may run over (nobody stops teru) or stop early at a good break)")
 print("share %:", {s: round(sum(len(spoken(ln)) for ln in lines if ln.startswith(s + ":")) / tot * 100) for s in SPEAKERS},
       "(target teru 45-50 / shirabe 25-30 / wata 20-25)")
 run = mx = 1
