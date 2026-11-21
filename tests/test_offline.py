@@ -1338,6 +1338,22 @@ assert "しらべ：保険点数" == nlm_notebooks.notebooks()["hoken"]["name"]
 qa_deep.strata_obj = qa_strata
 print("✅ drug names / notebooklm (shirabe)")
 
+# ---------- 週の連載: 夜中の自動の回の知らせ（src/series_notify.py） ----------
+import series_notify  # noqa: E402
+SN = TMP / "last_run.json"
+t0 = dt.datetime.now() - dt.timedelta(minutes=1)
+assert series_notify.read_last(t0, SN) is None                              # まだ書かれていない
+SN.write_text(json.dumps({"status": "ok", "action": "ep", "episode": 3, "title": "周術期", "chars": 7000,
+                          "notes": ["読みの要確認: ADAURA"]}, ensure_ascii=False), encoding="utf-8")
+run = series_notify.read_last(t0, SN)
+e = series_notify.embed(run)
+assert e["title"] == "📻 週の連載: 第3回ができました" and "約7,000字（約23分）" in e["description"] and "ADAURA" in e["description"]
+assert series_notify.read_last(dt.datetime.now() + dt.timedelta(minutes=5), SN) is None   # 起動より古いものは使わない
+e = series_notify.embed(None, "x https://discord.com/api/webhooks/123/abc y")
+assert "止まりました" in e["title"] and "abc" not in e["description"] and "webhooks/***" in e["description"]
+assert series_notify.embed({"status": "skip", "action": "none"})["title"].endswith("作るものがありません")
+print("✅ series notify")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500

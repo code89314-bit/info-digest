@@ -8,7 +8,8 @@ param([string]$Only = '')
 
 $digest = 'D:\info-digest\scripts\run_ai_digest.ps1'
 
-function Ps($file, $more) {
+# Not "Ps": that is a built-in alias of Get-Process, and an alias wins over a function of the same name.
+function New-PsAction($file, $more) {
     New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$file`" $more").Trim()
 }
 function Add($name, $action, $trigger, $limit) {
@@ -26,22 +27,25 @@ $none = New-TimeSpan -Seconds 0
 $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 
 # ---- resident at logon ----
-Add 'Strata AutoStart'  (Ps 'D:\Strata\scripts\strata-autostart.ps1' '') $logon $none
-Add 'SearXNG'           (Ps 'D:\searxng\local\run.ps1' '') $logon $none
-Add 'info-digest qa bot' (Ps 'D:\info-digest\scripts\run_qa_bot.ps1' '') $logon $none
+Add 'Strata AutoStart'  (New-PsAction 'D:\Strata\scripts\strata-autostart.ps1' '') $logon $none
+Add 'SearXNG'           (New-PsAction 'D:\searxng\local\run.ps1' '') $logon $none
+Add 'info-digest qa bot' (New-PsAction 'D:\info-digest\scripts\run_qa_bot.ps1' '') $logon $none
 
 # ---- run by hand or remotely (schtasks /run /tn StrataComfyMode) ----
-Add 'StrataComfyMode' (Ps 'D:\Strata\scripts\comfy-mode.ps1' '') $null (New-TimeSpan -Minutes 30)
-Add 'StrataLLMMode'   (Ps 'D:\Strata\scripts\llm-mode.ps1' '') $null (New-TimeSpan -Minutes 30)
+Add 'StrataComfyMode' (New-PsAction 'D:\Strata\scripts\comfy-mode.ps1' '') $null (New-TimeSpan -Minutes 30)
+Add 'StrataLLMMode'   (New-PsAction 'D:\Strata\scripts\llm-mode.ps1' '') $null (New-TimeSpan -Minutes 30)
 
 # ---- morning digests (Strata answers one request at a time; they queue up) ----
-Add 'info-digest AI'        (Ps $digest '') (New-ScheduledTaskTrigger -Daily -At '05:30') $h4
-Add 'info-digest AI global' (Ps $digest '-Section ai_global') (New-ScheduledTaskTrigger -Daily -At '05:35') $h4
+Add 'info-digest AI'        (New-PsAction $digest '') (New-ScheduledTaskTrigger -Daily -At '05:30') $h4
+Add 'info-digest AI global' (New-PsAction $digest '-Section ai_global') (New-ScheduledTaskTrigger -Daily -At '05:35') $h4
 # learn starts at 04:00 so its NotebookLM audio is done early; it waits and posts to Discord at learn.post_at (05:50)
-Add 'info-digest learn'     (Ps $digest '-Module learn -Section learn') (New-ScheduledTaskTrigger -Daily -At '04:00') $h4
-Add 'info-digest onco'      (Ps $digest '-Module onco_news -Section onco') (New-ScheduledTaskTrigger -Daily -At '06:00') $h4
-Add 'info-digest news'      (Ps $digest '-Section news') (New-ScheduledTaskTrigger -Daily -At '06:50') $h4
+Add 'info-digest learn'     (New-PsAction $digest '-Module learn -Section learn') (New-ScheduledTaskTrigger -Daily -At '04:00') $h4
+Add 'info-digest onco'      (New-PsAction $digest '-Module onco_news -Section onco') (New-ScheduledTaskTrigger -Daily -At '06:00') $h4
+Add 'info-digest news'      (New-PsAction $digest '-Section news') (New-ScheduledTaskTrigger -Daily -At '06:50') $h4
+
+# ---- weekly series: Claude Code skill /series-script auto (Mon-Sat next episode, Sun prep of the next week) ----
+Add 'info-digest series'    (New-PsAction 'D:\info-digest\scripts\run_series.ps1' '') (New-ScheduledTaskTrigger -Daily -At '02:00') $h3
 
 # ---- note drafts ----
-Add 'info-digest note'       (Ps $digest '-Module note_weekly -Section note_weekly') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At '07:00') $h3
-Add 'info-digest note hoken' (Ps $digest '-Module note_hoken -Section note_hoken') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At '08:00') $h3
+Add 'info-digest note'       (New-PsAction $digest '-Module note_weekly -Section note_weekly') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At '07:00') $h3
+Add 'info-digest note hoken' (New-PsAction $digest '-Module note_hoken -Section note_hoken') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At '08:00') $h3

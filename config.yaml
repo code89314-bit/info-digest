@@ -666,8 +666,11 @@ learn:
 # 出力は .local/series/<週ID>/（台本・note の記事・事実チェック表）。公開は1週遅れで、本人が確かめてからまとめて。
 series:
   enabled: true
-  # 夜中に自動で作るときの時刻（自動化はパイロット版のあと。22時台は本人が別のことに使う）
+  # 夜中に自動で作る時刻（タスク「info-digest series」。時刻を変えたら scripts\register_tasks.ps1 も直して登録し直す）
+  # 月〜土は次の回の台本、日曜は次の週の準備（スキル /series-script auto）。22時台は本人が別のことに使う
   run_at: "02:00"
+  # できた・止まったの知らせを送る Discord（.env の名前）
+  webhook_env: DISCORD_WEBHOOK_NOTE
   # 上から順に1週ずつ。type: structure（構造系）/ class（クラス追跡）/ drug（ドキュメンタリー）
   #   notebook: 使う専門ノートのキー（style/nlm_notebooks.yaml。ガイドライン PDF が入っている）
   #   drugs:    class で比べる薬（商品名。資料を薬ごとに集める）
