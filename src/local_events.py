@@ -273,6 +273,19 @@ def _d(rec: dict, key: str) -> dt.date | None:
     return dt.date.fromisoformat(rec[key]) if rec.get(key) else None
 
 
+URLISH = re.compile(r"^(https?://|www\.)|^[\w.-]+\.(com|jp|net|org|io|info|co)(/|$)", re.I)
+
+
+def link_md(rec: dict) -> str:
+    """出どころへのリンク。名前がアドレスそのもの（https://〜、〜.com）だと Discord がリンクにしないので
+    （偽リンク対策）、リンクの文字は「記事」にして、アドレスは後ろに添える（2026-11-22）。"""
+    site = (rec.get("site") or "記事").replace("[", "［").replace("]", "］")
+    if URLISH.search(site.strip()):
+        dom = re.sub(r"^https?://|/+$", "", site.strip())
+        return f"[記事]({rec['link']})（{dom}）"
+    return f"[{site}]({rec['link']})"
+
+
 def line(rec: dict) -> str:
     parts = []
     dl, st, d0, d1 = _d(rec, "deadline"), _d(rec, "entry_start"), _d(rec, "date"), _d(rec, "date_end")
@@ -287,9 +300,8 @@ def line(rec: dict) -> str:
     when = f"【{' / '.join(parts)}】" if parts else ""
     place = f"＠{rec['place']}" if rec.get("place") else ""
     note = f"（{rec['note']}）" if rec.get("note") else ""
-    site = rec["site"].replace("[", "［").replace("]", "］")
     pin = "📌" if rec.get("must") else ""   # 必ず見るサイトから
-    return f"• {pin}{when}**{rec['name']}**{place}{note} [{site}]({rec['link']})"
+    return f"• {pin}{when}**{rec['name']}**{place}{note} {link_md(rec)}"
 
 
 def soon(items: list[dict], today: dt.date, days: int) -> list[tuple[dt.date, str, dict]]:
@@ -327,7 +339,7 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
     # 終わったもの（締切も開催日も過ぎた・30日より前に見つけて日付の無いもの）は忘れる
     def alive(r):
         ds = [d for d in (_d(r, "deadline"), _d(r, "date_end") or _d(r, "date")) if d]
-        return any(d >= today for d in ds) if ds else (today - dt.date.fromisoformat(r["found"])).days <= 30
+        return any(d >= today for d in ds) if ds else             (today - dt.date.fromisoformat(r["found"])).days <= int(lc.get("undated_keep_days", 14))
     state["items"] = [r for r in state.get("items") or [] if alive(r)]
     state["seen"] = (list(state.get("seen") or []) + [title_key(h["title"]) for h in heads])[-3000:]
     save_state(STATE, state)
@@ -337,7 +349,7 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
     ids = {id(r) for r in new}
     near = [(d, lab, r) for d, lab, r in soon(state["items"], today, int(lc.get("remind_days", 7))) if id(r) not in ids]
     sections = [("⏰ もうすぐ", [f"• {fmt_day(d)} {lab}：**{r['name']}**" + (f"（{r['note']}）" if r.get("note") else "")
-                                 + f" [{r['site']}]({r['link']})" for d, lab, r in near])]
+                                 + f" {link_md(r)}" for d, lab, r in near])]
     sections += [(label, [line(r) for r in new if r["kind"] == kind]) for kind, label in KINDS.items()]
     title, embeds = lc.get("title") or "📍 沿線の情報", []
     for label, rows in sections:
@@ -352,9 +364,16 @@ def build_embeds(cfg: dict, today: dt.date | None = None) -> list[dict]:
 
 
 # ---- 受付中・開催中のまとめ（別のチャンネル。休日に前の投稿をさかのぼらなくても見られるように） ----
-def summary_sections(items: list[dict], today: dt.date) -> list[tuple[str, list[dict]]]:
+def summary_sections(items: list[dict], today: dt.date, undated_days: int = 7,
+                     max_undated: int = 10) -> list[tuple[str, list[dict]]]:
     """覚えているもののうち、申込を受け付けている・これから受け付けるもの（締切順）と、
-    開催中・これから開催するイベント（開催日順）。終わったものは入れない。"""
+    開催中・これから開催するイベント（開催日順）。終わったものは入れない。
+    日付の分からないもの（イベント・還元）は、見つけて undated_days 日以内のものを新しい順に max_undated 件まで
+    （たまり続けて多すぎた 2026-11-22）。"""
+    def fresh(recs):
+        recs = [r for r in recs if (today - dt.date.fromisoformat(r["found"])).days <= undated_days]
+        return sorted(recs, key=lambda r: r["found"], reverse=True)[:max_undated]
+
     def open_entry(r):
         dl = _d(r, "deadline")
         return r["kind"] == "entry" and (dl is None or dl >= today)
@@ -367,10 +386,10 @@ def summary_sections(items: list[dict], today: dt.date) -> list[tuple[str, list[
     # 終わる日だけ分かるもの（「〜11/30まで」）は開催中に入れる（date が無くて比べられず止まった 2026-11-20）
     now = sorted([r for r in events if not _d(r, "date") or _d(r, "date") <= today], key=end)
     later = sorted([r for r in events if _d(r, "date") and _d(r, "date") > today], key=lambda r: _d(r, "date"))
-    undated = [r for r in items if r["kind"] == "event" and not end(r)]
+    undated = fresh([r for r in items if r["kind"] == "event" and not end(r)])
     # 還元キャンペーン: 終わっていないもの（終了日の近い順。終了日が分からないものは後ろ）
-    camps = sorted([r for r in items if r["kind"] == "campaign" and (not end(r) or end(r) >= today)],
-                   key=lambda r: (end(r) is None, end(r) or today))
+    camps = sorted([r for r in items if r["kind"] == "campaign" and end(r) and end(r) >= today], key=end)
+    camps += fresh([r for r in items if r["kind"] == "campaign" and not end(r)])
     return [("✍️ 申込を受付中・受付予定（締切の近い順）", entries), ("🎪 開催中（終わる日の近い順）", now),
             ("🗓️ これから開催（開催日の近い順）", later), ("❔ 日付の分からないイベント", undated),
             ("💰 キャッシュレスの還元・キャンペーン（終わる日の近い順）", camps)]
@@ -404,13 +423,14 @@ def summary_line(r: dict, today: dt.date) -> str:
         rows.append(f"  - 場所 {r['place']}")
     if r.get("note"):
         rows.append(f"  - {r['note']}")
-    rows.append(f"  - [{r['site'].replace('[', '［').replace(']', '］')}]({r['link']})")
+    rows.append(f"  - {link_md(r)}")
     return "\n".join(rows)
 
 
 def summary_embeds(items: list[dict], today: dt.date, lc: dict) -> list[dict]:
     embeds, limit = [], int(lc.get("max_chars", 3800))
-    for label, recs in summary_sections(items, today):
+    sm = lc.get("summary") or {}
+    for label, recs in summary_sections(items, today, int(sm.get("undated_days", 7)), int(sm.get("max_undated", 10))):
         desc, part = "", 1
         for r in recs:
             ln = summary_line(r, today)
