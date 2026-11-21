@@ -22,6 +22,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import array
 import wave
 from pathlib import Path
 
@@ -29,15 +30,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 from tts_render import ROOT, SPEAKERS, parse  # noqa: E402
 
 API = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_VOICES = {"照井": "Charon", "しらべ": "Leda", "わた": "Puck"}
+DEFAULT_VOICES = {"照井": "Charon", "しらべ": "Gacrux", "わた": "Puck"}
 RATE = 24000          # Gemini TTS returns 24 kHz 16-bit mono PCM
 PROMPT = """以下は、日本の病院薬剤師向けの学習ポッドキャストの会話です。3人は気心の知れた仲間で、くつろいだ雰囲気で話しています。
 自然な日本語の会話として、抑揚・笑い・タメ・相づちをつけて読んでください。
 - 行の先頭の（ ）は話し方の指示です。指示どおりに話し、（ ）の中の言葉は読まないでください。
 - [笑] は短い自然な笑い、[間] はひと呼吸の間です。文字としては読まないでください。
 - 照井: 落ち着いた男性のがん専門薬剤師。話が乗ると熱が入る。
-- しらべ: 照井の部下の女性薬剤師。明るく、軽くつっこむ。
-- わた: 他の分野のベテラン男性薬剤師。普通の高さの声（低すぎない）。丁寧だが、ノリが良く明るく反応する。
+- しらべ: 照井の部下の、大人の女性薬剤師。落ち着いた声で、さらっとユーモアを効かせる。
+- わた: 他の分野のベテラン男性薬剤師で、番組の進行役（タイトルコール・締め）。普通の高さの声（低すぎない）。丁寧だが、ノリが良く明るく反応する。
 
 """
 
@@ -146,6 +147,16 @@ def synth(chunk, model: str, key: str, vmap: dict) -> bytes:
             sys.exit(f"Gemini error {ex.code}: {msg}")
 
 
+def smooth(pcm: bytes, ms: int = 15) -> bytes:
+    """Fade the edges of a chunk so the joins between chunks (speaker changes) do not click."""
+    a = array.array("h", pcm[: len(pcm) // 2 * 2])
+    n = min(len(a) // 2, RATE * ms // 1000)
+    for i in range(n):
+        a[i] = int(a[i] * i / n)
+        a[-1 - i] = int(a[-1 - i] * i / n)
+    return a.tobytes()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("week_dir", nargs="?")
@@ -170,7 +181,7 @@ def main() -> None:
     for i, c in enumerate(cs, 1):
         if i > 1:
             pcm.write(b"\x00\x00" * int(RATE * (0.9 if c[0][2] else 0.3)))
-        pcm.write(synth(c, model, key, vmap))
+        pcm.write(smooth(synth(c, model, key, vmap)))
         print(f"[{i}/{len(cs)}] {', '.join(sorted({s for s, _, _ in c}))}: {c[0][1][:25]}", flush=True)
     d = Path(a.week_dir) / "audio"
     d.mkdir(exist_ok=True)
