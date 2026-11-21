@@ -939,6 +939,13 @@ secs = dict(local_events.summary_sections(SUM_ITEMS, D))
 names = {k.split()[0]: [r["name"] for r in v] for k, v in secs.items()}
 assert names["✍️"] == ["締切前", "締切不明"] and names["🎪"] == ["開催中"] and names["🗓️"] == ["土曜", "来週"]
 assert names["❔"] == ["日付なし"]                                           # 終わったもの・お店は入れない
+# 日付の分からないものは、見つけて7日以内・新しい順に最大件数まで（たまって多すぎた 2026-11-22）
+OLD = [REC(name=f"古い{i}", found="2026-10-20") for i in range(3)] + [REC(name=f"新{i}", found=f"2026-11-0{i + 1}") for i in range(3)]
+assert [r["name"] for r in dict(local_events.summary_sections(OLD, D, 7, 2))["❔ 日付の分からないイベント"]] == ["新2", "新1"]
+# 出どころの名前がアドレスだと Discord がリンクにしない → 文字は「記事」、アドレスは後ろに
+assert local_events.link_md(REC(site="https://kawariyuku-machida.com/")) == "[記事](https://l/)（kawariyuku-machida.com）"
+assert local_events.link_md(REC(site="kakaku.com")) == "[記事](https://l/)（kakaku.com）"
+assert local_events.link_md(REC(site="ウォーカープラス")) == "[ウォーカープラス](https://l/)"
 # 終わる日だけ分かるイベント（「〜11/30まで」）は開催中に（date が無くて止まった 2026-11-20）
 UNTIL = REC(name="月末まで展示", date_end="2026-11-30")
 assert [r["name"] for r in dict(local_events.summary_sections([UNTIL], D))["🎪 開催中（終わる日の近い順）"]] == ["月末まで展示"]
