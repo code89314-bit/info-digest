@@ -23,9 +23,9 @@ COMPOSE = r"D:\Docker\irodori\docker-compose.yml"
 SERVICE = "irodori-v3-voicedesign"
 VOICE_DIR = ROOT / ".local" / "series" / "voices" / "irodori"
 DEFAULT_VOICES = {
-    "照井": {"caption": "落ち着いた大人の男性の声。病院のベテラン薬剤師が、ラジオ番組で同僚と話している。穏やかで知的、話が乗ると少し熱が入る。", "seed": 11},
-    "しらべ": {"caption": "明るくハキハキした、20代後半の女性の声。ラジオ番組のアシスタントのように、軽やかで親しみやすく話す。", "seed": 22},
-    "わた": {"caption": "低めで柔らかい声の、40代の男性。丁寧で控えめに、相手を立てながら質問する。", "seed": 33},
+    "堀田": {"caption": "落ち着いた大人の男性の声。病院のベテラン薬剤師が、ラジオ番組で同僚と話している。穏やかで知的、話が乗ると少し熱が入る。", "seed": 11},
+    "横井": {"caption": "明るくハキハキした、20代後半の女性の声。ラジオ番組のアシスタントのように、軽やかで親しみやすく話す。", "seed": 22},
+    "司": {"caption": "低めで柔らかい声の、40代の男性。丁寧で控えめに、相手を立てながら質問する。", "seed": 33},
 }
 DESIGN_TEXT = "こんにちは。今日もよろしくお願いします。それでは、さっそく本題に入っていきましょう。"
 # direction keyword -> emoji added to the text
@@ -72,7 +72,7 @@ def main() -> None:
     (d / "audio").mkdir(exist_ok=True)
     VOICE_DIR.mkdir(parents=True, exist_ok=True)
     vs = voices()
-    ascii_name = {"照井": "teru", "しらべ": "shirabe", "わた": "wata"}
+    ascii_name = {"堀田": "teru", "横井": "shirabe", "司": "wata"}
     job = {"voices": {k: {"caption": x["caption"], "seed": x.get("seed", 1), "ref": f"/voices/{ascii_name.get(k, k)}.wav"}
                       for k, x in vs.items()},
            "design_text": DESIGN_TEXT, "out": f"/data/audio/{tag}.wav", "lines": []}

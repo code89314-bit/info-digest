@@ -1,12 +1,12 @@
 """Read a series script aloud with a VOICEVOX-compatible engine (AivisSpeech / VOICEVOX) and save an mp3.
 
-The script lines are `照井: ...` / `しらべ: ...` / `わた: ...`, with readings written as {表記|よみ}; the よみ is spoken.
+The script lines are `堀田: ...` / `横井: ...` / `司: ...`, with readings written as {表記|よみ}; the よみ is spoken.
 Voices per speaker come from style/series_voices.yaml (engine -> speaker -> style id) or --voices.
 
 usage:
   python tts_render.py --engine aivis --list                         # show the engine's voices (style ids)
   python tts_render.py <week_dir> <n> --engine aivis --lines 20      # first 20 lines only (a sample to compare)
-  python tts_render.py <week_dir> <n> --engine voicevox --voices 照井=13,しらべ=2,わた=11
+  python tts_render.py <week_dir> <n> --engine voicevox --voices 堀田=13,横井=2,司=11
 engines: aivis = AivisSpeech (http://127.0.0.1:10101), voicevox = VOICEVOX (http://127.0.0.1:50021)
 """
 import argparse
@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 ENGINES = {"aivis": "http://127.0.0.1:10101", "voicevox": "http://127.0.0.1:50021"}
-SPEAKERS = ("照井", "しらべ", "わた")
+SPEAKERS = ("堀田", "横井", "司")
 GAP_LINE, GAP_SECTION = 0.35, 0.9      # seconds of silence between lines / sections
 
 
@@ -51,7 +51,7 @@ def load_voices(engine: str, arg: str | None) -> dict:
         cfg = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get(engine) or {}
         if all(s in cfg for s in SPEAKERS):
             return {s: int(cfg[s]["id"] if isinstance(cfg[s], dict) else cfg[s]) for s in SPEAKERS}
-    sys.exit(f"voices for {engine} are not set: use --voices 照井=ID,しらべ=ID,わた=ID (see --list)")
+    sys.exit(f"voices for {engine} are not set: use --voices 堀田=ID,横井=ID,司=ID (see --list)")
 
 
 def parse(script_path: Path, keep_directions: bool = False) -> list[tuple[str, str, bool]]:
@@ -64,7 +64,7 @@ def parse(script_path: Path, keep_directions: bool = False) -> list[tuple[str, s
         if ln.startswith("## "):
             new_sec = True
             continue
-        m = re.match(r"^(照井|しらべ|わた):\s*(.*)$", ln)
+        m = re.match(r"^(堀田|横井|司):\s*(.*)$", ln)
         if m:
             text = re.sub(r"\{([^|}]*)\|([^}]*)\}", r"\2", m.group(2)).strip()
             if not keep_directions:

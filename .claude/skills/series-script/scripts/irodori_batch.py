@@ -1,9 +1,9 @@
 """Runs INSIDE the Irodori-TTS v3 container (D:\\Docker\\irodori, image irodori-tts:v3). Started by tts_irodori.py.
 
 job.json:
-  {"voices": {"照井": {"caption": "...", "ref": "/data/voices/照井.wav", "seed": 11}, ...},
+  {"voices": {"堀田": {"caption": "...", "ref": "/data/voices/堀田.wav", "seed": 11}, ...},
    "design_text": "...",                      # sentence used to create a voice reference when ref does not exist
-   "lines": [{"speaker": "照井", "text": "...", "style": "...", "gap": 0.35}, ...],
+   "lines": [{"speaker": "堀田", "text": "...", "style": "...", "gap": 0.35}, ...],
    "out": "/data/out.wav"}
 1) For each speaker whose ref wav is missing: VoiceDesign from the caption only (no reference) -> save as the ref.
 2) Each line: text (+emoji) with the speaker's ref (same voice) and caption = voice caption + line style (emotion).

@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 d, n = Path(sys.argv[1]), sys.argv[2]
-SPEAKERS = ("照井", "しらべ", "わた")
+SPEAKERS = ("堀田", "横井", "司")
 script = (d / f"ep{n}-script.md").read_text(encoding="utf-8").split("---", 2)[2]
 facts = (d / f"ep{n}-facts.md").read_text(encoding="utf-8")
-lines = [ln for ln in script.splitlines() if re.match(r"^(照井|しらべ|わた):", ln)]
-bad = [ln for ln in script.splitlines() if ln.strip() and not ln.startswith("## ") and not re.match(r"^(照井|しらべ|わた):", ln)]
+lines = [ln for ln in script.splitlines() if re.match(r"^(堀田|横井|司):", ln)]
+bad = [ln for ln in script.splitlines() if ln.strip() and not ln.startswith("## ") and not re.match(r"^(堀田|横井|司):", ln)]
 
 
 def spoken(ln):
@@ -32,7 +32,7 @@ print("max consecutive lines by one speaker:", mx, "(must be <= 2)")
 long_lines = [spoken(ln)[:30] for ln in lines if len(spoken(ln)) > 200]
 print("lines over 200 chars:", len(long_lines), long_lines)
 print("lines without a speaker label:", len(bad), [b[:30] for b in bad])
-wata = [ln for ln in lines if ln.startswith("わた:")]
+wata = [ln for ln in lines if ln.startswith("司:")]
 print("wata first-person (should be ~0):", sum(ln.count("俺") for ln in wata),
       "| rough endings (だな/だ。/ダメ):", sum(bool(re.search(r"だな|だ。|ダメ|じゃないですか", ln)) for ln in wata))
 nums = lambda s: set(re.findall(r"\d+(?:\.\d+)?", s))

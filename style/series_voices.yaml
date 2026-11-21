@@ -1,17 +1,17 @@
 # ==== 週の連載の声（読み上げソフトの話者。.claude/skills/series-script/scripts/tts_render.py が使う） ====
-# engine ごとに、照井・しらべ・わたの style id を書く。id は `tts_render.py --engine <engine> --list` で調べる。
+# engine ごとに、堀田・横井・司の style id を書く。id は `tts_render.py --engine <engine> --list` で調べる。
 # 公開に使う前に、声のモデルごとの利用規約（商用・公開・クレジット表記）を確かめて license に書く。
 #   aivis:    AivisSpeech（http://127.0.0.1:10101）
 #   voicevox: VOICEVOX（http://127.0.0.1:50021。公開時は「VOICEVOX:キャラクター名」のクレジット表記が要る）
 gemini:          # Gemini の読み上げ（tts_gemini.py）。声の名前は Google の既製の声
-  照井: {voice: Charon}     # 落ち着いた男性（2026-11-21 本人が Iapetus と聞き比べて決定）
-  しらべ: {voice: Gacrux}   # 大人の女性（2026-11-21 本人: NotebookLM の音声のような、落ち着いてユーモアのある成人女性。Sulafat・Callirrhoe・Kore・Aoede と聞き比べて決定）
-  わた: {voice: Puck}       # 普通の高さで明るい男性（2026-11-21 本人: 低すぎない、丁寧だがノリが良い）
+  堀田: {voice: Charon}     # 落ち着いた男性（2026-11-21 本人が Iapetus と聞き比べて決定）
+  横井: {voice: Gacrux}   # 大人の女性（2026-11-21 本人: NotebookLM の音声のような、落ち着いてユーモアのある成人女性。Sulafat・Callirrhoe・Kore・Aoede と聞き比べて決定）
+  司: {voice: Puck}       # 普通の高さで明るい男性（2026-11-21 本人: 低すぎない、丁寧だがノリが良い）
 aivis:
-  # 照井: {id: 0, name: "", license: ""}     # 落ち着いた男性
-  # しらべ: {id: 0, name: "", license: ""}   # 女性
-  # わた: {id: 0, name: "", license: ""}     # 落ち着いた男性（照井と聞き分けられる声）
+  # 堀田: {id: 0, name: "", license: ""}     # 落ち着いた男性
+  # 横井: {id: 0, name: "", license: ""}   # 女性
+  # 司: {id: 0, name: "", license: ""}     # 落ち着いた男性（堀田と聞き分けられる声）
 voicevox:
-  # 照井: {id: 0, name: "", license: ""}
-  # しらべ: {id: 0, name: "", license: ""}
-  # わた: {id: 0, name: "", license: ""}
+  # 堀田: {id: 0, name: "", license: ""}
+  # 横井: {id: 0, name: "", license: ""}
+  # 司: {id: 0, name: "", license: ""}
