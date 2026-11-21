@@ -139,4 +139,4 @@ state.json の週に `episodes`（6 または 7）を記録する。
 - 使えるモデル: gemini-3.8-flash-tts（無料枠 1日10回）、gemini-2.5-flash-preview-tts（無料枠わずか）、gemini-2.5-pro-preview-tts（無料枠なし）。
 - 3.x のモデルは全体への指示文（systemInstruction）を受け付けず、台詞ごとに speechMetadata.speaker が要る。演出は台詞の中のタグ（[laughs] など）に置き換える（効くかは要確認）。
 - 1話（約100行）は話者2人ずつに区切って約40回の呼び出し。無料枠では足りず、従量課金の設定が要る（本人が決める）。
-- 声: 堀田=Charon、横井=Leda、司=Puck（本人: 司は低すぎない普通の高さ、丁寧だがノリが良い）。
+- 声: 堀田=Charon、横井=Gacrux、司=Puck（2026-11-21 本人が聞き比べて決定）（本人: 司は低すぎない普通の高さ、丁寧だがノリが良い）。
