@@ -661,6 +661,22 @@ learn:
     daily_limit: 5                      # 上の onco.podcast と同じにする（台帳は共通）
     rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
+# ==== 週の連載（公開学習アーカイブ。全6回・各回約20分）。設計は docs/SERIES_PLAN.md ====
+# 台本は Claude Code のスキル（.claude/skills/series-script）が、NotebookLM で資料を調べて書く（/series-script prep → ep 1〜6）。
+# 出力は .local/series/<週ID>/（台本・note の記事・事実チェック表）。公開は1週遅れで、本人が確かめてからまとめて。
+series:
+  enabled: true
+  # 夜中に自動で作るときの時刻（自動化はパイロット版のあと。22時台は本人が別のことに使う）
+  run_at: "02:00"
+  # 上から順に1週ずつ。type: structure（構造系）/ class（クラス追跡）/ drug（ドキュメンタリー）
+  #   notebook: 使う専門ノートのキー（style/nlm_notebooks.yaml。ガイドライン PDF が入っている）
+  #   drugs:    class で比べる薬（商品名。資料を薬ごとに集める）
+  #   scope:    範囲の絞り込み（任意）
+  weeks:
+    - {type: structure, title: EGFR遺伝子変異陽性 非小細胞肺がん, notebook: lung, pilot: true}   # パイロット版
+    - {type: class, title: EGFR阻害薬, drugs: [イレッサ, タルセバ, ジオトリフ, ビジンプロ, タグリッソ], scope: 非小細胞肺がん}
+    - {type: drug, title: タグリッソ}
+
 # ==== note 毎日の記事「がん薬物療法ニュース」（6:00 の回をそのまま note に公開） ====
 # src/note_daily.py が動かします（onco_news.py が曜日の回を Discord に投稿したあとに続けて呼ぶ。タスクの追加は不要）。
 #   動向まとめ・記事ごとの要約・podcast（音声）を1本の記事にして、note に下書き保存 → チェックに通れば公開します。
