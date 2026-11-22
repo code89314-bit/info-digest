@@ -56,7 +56,7 @@ def load_voices(engine: str, arg: str | None) -> dict:
 
 def parse(script_path: Path, keep_directions: bool = False) -> list[tuple[str, str, bool]]:
     """(speaker, spoken text, starts a new section). Readings {表記|よみ} -> よみ.
-    keep_directions=False (AivisSpeech): drop the leading （演出） and [笑]; keep [間] as a marker for silence.
+    keep_directions=False (AivisSpeech): drop every （演出） (also mid-line) and [笑]; keep [間] as a marker for silence.
     keep_directions=True (Gemini): keep them; the prompt tells the model they are directions, not words."""
     body = script_path.read_text(encoding="utf-8").split("---", 2)[2]
     out, new_sec = [], False
@@ -68,7 +68,7 @@ def parse(script_path: Path, keep_directions: bool = False) -> list[tuple[str, s
         if m:
             text = re.sub(r"\{([^|}]*)\|([^}]*)\}", r"\2", m.group(2)).strip()
             if not keep_directions:
-                text = re.sub(r"^（[^）]*）", "", text)
+                text = re.sub(r"（[^）]*）", "", text)   # every direction, not only a leading one
                 text = text.replace("[笑]", "").strip()
             if text:
                 out.append((m.group(1), text, new_sec))

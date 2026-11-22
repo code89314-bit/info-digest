@@ -3,14 +3,15 @@
 # 公開に使う前に、声のモデルごとの利用規約（商用・公開・クレジット表記）を確かめて license に書く。
 #   aivis:    AivisSpeech（http://127.0.0.1:10101）
 #   voicevox: VOICEVOX（http://127.0.0.1:50021。公開時は「VOICEVOX:キャラクター名」のクレジット表記が要る）
-gemini:          # Gemini の読み上げ（tts_gemini.py）。声の名前は Google の既製の声
+gemini:          # Gemini の読み上げ（tts_gemini.py）。声の名前は Google の既製の声。2026-11-23 本人が採用（1行ずつ・演出は消す・行末のノイズを切る）
   堀田: {voice: Charon}     # 落ち着いた男性（2026-11-21 本人が Iapetus と聞き比べて決定）
-  横井: {voice: Gacrux}   # 大人の女性（2026-11-21 本人: NotebookLM の音声のような、落ち着いてユーモアのある成人女性。Sulafat・Callirrhoe・Kore・Aoede と聞き比べて決定）
+  横井: {voice: Sulafat}  # 大人の女性（2026-11-23 本人: Gacrux から変更。Sulafat・Callirrhoe・Kore・Aoede・Gacrux を聞き直して決定）
   司: {voice: Puck}       # 普通の高さで明るい男性（2026-11-21 本人: 低すぎない、丁寧だがノリが良い）
-aivis:
-  # 堀田: {id: 0, name: "", license: ""}     # 落ち着いた男性
-  # 横井: {id: 0, name: "", license: ""}   # 女性
-  # 司: {id: 0, name: "", license: ""}     # 落ち着いた男性（堀田と聞き分けられる声）
+aivis:            # AivisSpeech（予備。2026-11-23 に本人が Gemini と聞き比べて Gemini に決めた。句ごとに作り、間だけを入れる＝tts_aivis_breath.py の A 版）
+  # 声は AivisHub から入れる（D:\aivisspeech\Windows-x64\run.exe を起動して POST /aivm_models/install）。公開の前に ACML 1.0 のクレジット表記を確かめる
+  堀田: {id: 1310138977, name: "阿井田 茂（Calm）", license: "ACML 1.0（要確認: クレジット表記）"}   # 低めのバリトン、約132Hz
+  横井: {id: 497929760, name: "morioki", license: "ACML 1.0（要確認: クレジット表記）"}            # 大人の女性
+  司: {id: 2029042368, name: "澤原 玄二郎", license: "ACML 1.0（要確認: クレジット表記）"}          # 約182Hz。にせ（若すぎる）・fumifumi・猩々博士と聞き比べて決定
 voicevox:
   # 堀田: {id: 0, name: "", license: ""}
   # 横井: {id: 0, name: "", license: ""}
