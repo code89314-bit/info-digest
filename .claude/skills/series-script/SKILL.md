@@ -37,11 +37,11 @@ NotebookLM の音声は、専門用語の読み間違いや、話者の入れ替
 - `/series-script prep` … 次の週の準備: ノートブックを作って資料を入れ、構成表（plan.md）を書く。
 - `/series-script ep <n>` … 第n回の台本・記事・事実チェック表を書く（prep が済んでいること）。
 - `/series-script all` … prep がまだなら prep をしてから、第1〜6回を順に書く。
-- `/series-script auto` … **夜中の自動の回**（タスク「info-digest series」毎日 2:00、`scripts/run_series.ps1`）。下の「auto（自動の回）」の決まりで動く。
+- `/series-script auto` … **自動の回**（タスク「info-digest series」毎日 14:00、`scripts/run_series.ps1`）。下の「auto（自動の回）」の決まりで動く。
 - 週を指定するとき: `/series-script prep EGFR阻害薬`（`series.weeks` の title の一部）。指定が無ければ、
   `.local\series\state.json` でまだ終わっていない、`series.weeks` のいちばん上の週。
 
-## auto（自動の回。人がいない夜中に動く。2026-11-22 本人が決定: 2:00、月〜土に1話・日曜に準備、Discord に知らせる）
+## auto（自動の回。人がいないときに動く。2026-11-22 本人が決定: 月〜土に1話・日曜に準備、Discord に知らせる。時刻は 2:00 → 14:00 に変更）
 - **何をするか**（今日の曜日で決める）:
   - 月〜土: `state.json` で、準備が済んでいて終わっていない週のうち、いちばん古い週の**次の回**（done の最大＋1）を書く（ep の手順どおり）。
     その週が全部終わっていれば（episodes の回まで done）、何もしない（skip）。準備の済んだ週が無ければ何もしない（準備は日曜）。
@@ -51,7 +51,8 @@ NotebookLM の音声は、専門用語の読み間違いや、話者の入れ替
 - **人に聞かない**: AskUserQuestion は使わない。本人の判断が要ることは、決めずに `notes` に書いて残す（例: 読みの要確認、資料が薄い回、事実の矛盾）。
 - **触ってよいもの**: `.local\series\` の中と、`style/series_yomi.yaml`（読みの追加だけ）。コードやスキルのファイル・config.yaml は直さない。
   コミット・プッシュ・公開・削除（NotebookLM の資料の削除は prep の手順の範囲だけ）はしない。秘密を出力に書かない。
-- **NotebookLM のチャット**: 2:00 に聞くと 4:00・6:00 の定時の回数に響く（本人は承知のうえで 2:00 を選んだ）。そのため聞くのは**1話で8問まで**、
+- **NotebookLM のチャット**: 14:00 には朝 4:00・6:00 に使った分が戻っていて、ここで使った分も 19:00 には戻る（夜のしらべの Bot に響かない）。
+  それでも回数は Bot・学習・ニュースと共通なので、聞くのは**1話で8問まで**、
   `source fulltext` で読めるものはそちらで読む。断られたら（rate limited）その日はそれ以上聞かず、fulltext で書けるところまで書き、書けなければ error で止める。
 - **最後に必ず** `.local\series\last_run.json` を書く（`src/series_notify.py` が Discord に知らせる）:
   `{"date": "YYYY-MM-DD", "status": "ok|skip|error", "action": "ep|prep|none", "week": "<週ID>", "episode": n, "title": "<回の題>",

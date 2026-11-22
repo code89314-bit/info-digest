@@ -1,4 +1,4 @@
-# Weekly series (Windows Task Scheduler: task "info-digest series", daily 02:00).
+# Weekly series (Windows Task Scheduler: task "info-digest series", daily 14:00; it was 02:00 until 2026-11-22).
 # Runs the Claude Code skill "/series-script auto" without a person at the keyboard:
 #   Mon-Sat: the next episode of the current week. Sun: prep of the next week. Nothing to do: it says so.
 # The skill writes .local\series\last_run.json; src\series_notify.py posts the result to Discord.

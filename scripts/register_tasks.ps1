@@ -41,10 +41,14 @@ Add 'info-digest AI global' (New-PsAction $digest '-Section ai_global') (New-Sch
 # learn starts at 04:00 so its NotebookLM audio is done early; it waits and posts to Discord at learn.post_at (05:50)
 Add 'info-digest learn'     (New-PsAction $digest '-Module learn -Section learn') (New-ScheduledTaskTrigger -Daily -At '04:00') $h4
 Add 'info-digest onco'      (New-PsAction $digest '-Module onco_news -Section onco') (New-ScheduledTaskTrigger -Daily -At '06:00') $h4
-Add 'info-digest news'      (New-PsAction $digest '-Section news') (New-ScheduledTaskTrigger -Daily -At '06:50') $h4
+# news is split (2026-11-22): built at 03:00 (after the user's PC time 21:00-01:00), posted at 06:40 with the stock
+# section (US close is in by 06:00, 05:00 in summer). The user reads it at 07:00.
+Add 'info-digest news prepare' (New-PsAction $digest '-Section news -Phase prepare') (New-ScheduledTaskTrigger -Daily -At '03:00') $h4
+Add 'info-digest news'      (New-PsAction $digest '-Section news -Phase post') (New-ScheduledTaskTrigger -Daily -At '06:40') $h4
 
-# ---- weekly series: Claude Code skill /series-script auto (Mon-Sat next episode, Sun prep of the next week) ----
-Add 'info-digest series'    (New-PsAction 'D:\info-digest\scripts\run_series.ps1' '') (New-ScheduledTaskTrigger -Daily -At '02:00') $h3
+# ---- weekly series: Claude Code skill /series-script auto (Mon-Sat that day's episode, Sun prep of the next week) ----
+# 14:00: the NotebookLM chat used at 04:00/06:00 is back by then, and what this uses is back by 19:00 (no GPU, no Strata)
+Add 'info-digest series'    (New-PsAction 'D:\info-digest\scripts\run_series.ps1' '') (New-ScheduledTaskTrigger -Daily -At '14:00') $h3
 
 # ---- note drafts ----
 Add 'info-digest note'       (New-PsAction $digest '-Module note_weekly -Section note_weekly') (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At '07:00') $h3

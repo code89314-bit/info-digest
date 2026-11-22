@@ -182,7 +182,9 @@ ai_global:
 # ==== 朝のニュース（広告なしの自分専用ニュース）====
 # NHK などの RSS から、関心に合うものだけを Strata が選んで要約し、#ニュース に投稿します。
 # 要約は Discord の中で読めるので、リンク先（広告の多いページ）を開かなくて済みます。
-# 実行: python src/ai_digest.py news （タスク「info-digest news」毎朝 6:50）
+# 実行は2つに分けている（2026-11-22。本人が 7:00 に見る。21:00〜25:00 は本人が PC を使うので避ける）
+#   3:00 作り置き  python src/ai_digest.py news --phase prepare （タスク「info-digest news prepare」。投稿しない）
+#   6:40 投稿      python src/ai_digest.py news --phase post    （タスク「info-digest news」。株式の欄＝米国株の終値を足して投稿）
 # llm: を書かなければ ai_digest の llm と同じサーバー・モデルを使います。
 news:
   icon: 📰
@@ -666,9 +668,11 @@ learn:
 # 出力は .local/series/<週ID>/（台本・note の記事・事実チェック表）。公開は1週遅れで、本人が確かめてからまとめて。
 series:
   enabled: true
-  # 夜中に自動で作る時刻（タスク「info-digest series」。時刻を変えたら scripts\register_tasks.ps1 も直して登録し直す）
-  # 月〜土は次の回の台本、日曜は次の週の準備（スキル /series-script auto）。22時台は本人が別のことに使う
-  run_at: "02:00"
+  # 自動で作る時刻（タスク「info-digest series」。時刻を変えたら scripts\register_tasks.ps1 も直して登録し直す）
+  # 月〜土はその日の回の台本、日曜は次の週の準備（スキル /series-script auto）。
+  # 14:00 にした（2026-11-22）: 朝 4:00・6:00 に使った NotebookLM のチャットの回数が戻っていて、ここで使った分も
+  # 19:00 には戻る。21:00〜25:00 は本人が PC を使う。GPU・Strata は使わない
+  run_at: "14:00"
   # できた・止まったの知らせを送る Discord（.env の名前）
   webhook_env: DISCORD_WEBHOOK_NOTE
   # 上から順に1週ずつ。type: structure（構造系）/ class（クラス追跡）/ drug（ドキュメンタリー）

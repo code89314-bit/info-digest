@@ -1,4 +1,4 @@
-"""週の連載: 夜中の自動の回（scripts/run_series.ps1）が終わったら、結果を Discord に知らせる。
+"""週の連載: 自動の回（毎日 14:00、scripts/run_series.ps1）が終わったら、結果を Discord に知らせる。
 
 Claude Code のスキル `/series-script auto` が、最後に `.local/series/last_run.json` を書く:
   {"date": "2026-11-23", "status": "ok" | "error" | "skip", "action": "ep" | "prep" | "none",
@@ -41,7 +41,7 @@ def read_last(started: dt.datetime, path: Path = LAST) -> dict | None:
 
 def embed(run: dict | None, log_tail: str = "") -> dict:
     if run is None:
-        return {"title": "📻 週の連載: 夜中の回が途中で止まりました", "color": COLOR["error"],
+        return {"title": "📻 週の連載: 自動の回が途中で止まりました", "color": COLOR["error"],
                 "description": "結果のファイル（last_run.json）が書かれませんでした。ログの最後:\n```\n"
                                + mask(log_tail)[-1500:] + "\n```"}
     st = run.get("status", "error")

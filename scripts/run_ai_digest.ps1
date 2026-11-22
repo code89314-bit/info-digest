@@ -1,6 +1,8 @@
 # Run an AI digest on the home LLM server (Windows Task Scheduler: tasks "info-digest AI" / "info-digest AI global").
 #   -Section ai_digest (default): Japanese articles -> #ai-llm      -Section ai_global: overseas topics
-#   -Section news: morning news (NHK RSS, task "info-digest news" 06:50)
+#   -Section news: morning news (NHK RSS). Split in two since 2026-11-22 (the user reads it at 07:00):
+#     -Phase prepare (task "info-digest news prepare" 03:00): pick and build the posts, keep them, post nothing
+#     -Phase post    (task "info-digest news" 06:40): add the stock section (US close is in by then) and post
 # NOTE: keep this file ASCII-only (Windows PowerShell 5.1 reads .ps1 as ANSI).
 #
 # Secrets and the local state dir come from .env in the repository root (not committed).
@@ -9,12 +11,13 @@
 #   -Module onco_news -Section onco: weekly oncology news (collect daily, themed episode per weekday)
 #   -Module note_weekly -Section note_weekly: weekly note draft (task "info-digest note", Sat 07:00)
 #   -Module note_hoken -Section note_hoken: Wednesday note draft (task "info-digest note hoken", Wed 08:00)
-param([string]$Section = 'ai_digest', [string]$Module = 'ai_digest', [int]$WaitMinutes = 180)
+param([string]$Section = 'ai_digest', [string]$Module = 'ai_digest', [int]$WaitMinutes = 180, [string]$Phase = '')
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 New-Item -ItemType Directory -Force (Join-Path $root '.local\logs') | Out-Null
-$log = Join-Path $root ('.local\logs\' + $Section + '-' + (Get-Date -Format 'yyyyMMdd') + '.log')
+$tag = $Section; if ($Phase) { $tag = $Section + '-' + $Phase }   # news-prepare / news-post: own log and lock
+$log = Join-Path $root ('.local\logs\' + $tag + '-' + (Get-Date -Format 'yyyyMMdd') + '.log')
 function Log($m) { Add-Content $log ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m) }
 
 $python = Join-Path $root '.venv\Scripts\python.exe'
@@ -36,7 +39,7 @@ Log "start (llm: $base)"
 # (src/gpu_mode.py reads this lock). If the bot holds the GPU now (luna-mode.flag), take it back to Strata.
 # One lock per section: jobs can overlap (note at 07:00 while onco from 06:00 still runs), and the first one
 # to finish must not remove the lock of the other.
-$lock = Join-Path $root ('.local\state\llm_busy.' + $Section + '.lock')
+$lock = Join-Path $root ('.local\state\llm_busy.' + $tag + '.lock')
 New-Item -ItemType Directory -Force (Split-Path $lock) | Out-Null
 Set-Content $lock "$Section $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 # Same when ComfyUI was switched on by hand (comfy-mode.flag): a forgotten comfy-mode left the morning digests
@@ -73,7 +76,8 @@ if ($base) {
 $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUNBUFFERED = '1'    # write progress to the log as it happens (not all at the end)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8    # read python's UTF-8 output as UTF-8 (not the ANSI code page)
-& $python "src\$Module.py" $Section 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
+$extra = @(); if ($Phase) { $extra = @('--phase', $Phase) }
+& $python "src\$Module.py" $Section @extra 2>&1 | ForEach-Object { "$_" } | Add-Content $log -Encoding UTF8
 $code = $LASTEXITCODE
 Remove-Item $lock -ErrorAction SilentlyContinue
 Log "exit code $code"

@@ -586,14 +586,96 @@ def section_config(section: str) -> dict:
     return cfg
 
 
-def main(section: str = "ai_digest", seed: bool = False) -> None:
+def add_market(cfg: dict, embeds: list[dict]) -> None:
+    """news.market: 株式の欄（src/market.py）を「今日の動向まとめ」の次（無ければ先頭）に入れる。"""
+    if not (cfg.get("market") or {}).get("enabled"):
+        return
+    import market
+    try:
+        mk = market.build_embed(cfg)
+    except Exception as ex:   # noqa: BLE001  株の欄が作れなくてもニュースは投稿する
+        print("米国株の欄を作れませんでした:", ex)
+        mk = None
+    if mk:
+        embeds.insert(1 if embeds and (embeds[0].get("title") or "").startswith("📋") else 0, mk)
+
+
+def post_local_summary(cfg: dict) -> None:
+    """news.local.summary: 受付中・開催中のまとめ（別のチャンネル）。"""
+    if not (cfg.get("local") or {}).get("enabled"):
+        return
+    import local_events
+    try:
+        local_events.post_summary(cfg)
+    except Exception as ex:   # noqa: BLE001
+        print("受付中・開催中のまとめを投稿できませんでした:", ex)
+
+
+def publish(section: str, cfg: dict, state: dict, content: str, embeds: list[dict]) -> list | None:
+    """組み立てた投稿を Discord に出し、keep_days のために投稿の ID を返す。"""
+    webhook = cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI"
+    title = cfg.get("title") or "AI・LLMダイジェスト"
+    ids = [] if cfg.get("keep_days") else None
+    if cfg.get("split_posts"):   # 欄ごとに別の投稿にして、それぞれに画像を付ける
+        post_sections(webhook, title, cfg, content, embeds, ids=ids)
+    else:
+        post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content,
+                     embeds=embeds, ids=ids)
+    return ids
+
+
+def finish_posts(cfg: dict, state: dict, ids: list | None) -> None:
+    if cfg.get("keep_days") and os.environ.get("DRY_RUN") != "1":   # 古い投稿を消す
+        try:
+            delete_old_posts(cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI", state, int(cfg["keep_days"]), ids or [])
+        except Exception as ex:   # noqa: BLE001  消せなくても続ける
+            print("古い投稿を消せませんでした:", ex)
+
+
+PREPARED_MAX_HOURS = 12   # これより古い作り置きは使わない（いつもどおり作り直す）
+
+
+def post_prepared(section: str, cfg: dict) -> bool:
+    """phase=post: 夜中（phase=prepare）に作り置いた投稿に、株式の欄を足して投稿する。
+
+    作り置きが無い・古いときは False（呼び出し側がいつもどおり作る）。
+    """
+    prep = load_state(f"{section}_prepared")
+    try:
+        made = dt.datetime.fromisoformat(prep["made"])
+    except (KeyError, ValueError):
+        print("作り置きがありません: いつもどおり作ります")
+        return False
+    if dt.datetime.now() - made > dt.timedelta(hours=PREPARED_MAX_HOURS):
+        print(f"作り置きが古すぎます（{made:%m/%d %H:%M}）: いつもどおり作ります")
+        return False
+    embeds = prep.get("embeds") or []
+    add_market(cfg, embeds)
+    post_local_summary(cfg)
+    state = load_state(section)
+    ids = publish(section, cfg, state, prep.get("content") or "", embeds)
+    finish_posts(cfg, state, ids)
+    save_state(section, state)
+    save_state(f"{section}_prepared", {"posted": dt.datetime.now().isoformat(timespec="seconds")})
+    print(f"作り置き（{made:%m/%d %H:%M}）に株式の欄を足して投稿しました: {len(embeds)} 欄")
+    return True
+
+
+def main(section: str = "ai_digest", seed: bool = False, phase: str = "") -> None:
     """section: config.yaml の区画名。既読管理（state/<section>.json）も区画ごとに別。
 
     seed=True: 今ある記事を既読にするだけで投稿しない（日付の無いRSSを足したときの初回用）。
+    phase（朝のニュース用。2026-11-22 本人が決定）:
+      "prepare" … 記事を選んで投稿を組み立て、state/<section>_prepared.json に置くだけ（投稿しない。株式の欄は作らない）
+      "post"    … 作り置きに株式の欄（米国株の終値がそろってから）を足して投稿する。作り置きが無ければいつもどおり
+      ""        … いつもどおり（作って、すぐ投稿）
     """
     cfg = section_config(section)
     if not cfg:
         raise SystemExit(f"config.yaml に {section}: がありません")
+    if phase == "post" and post_prepared(section, cfg):
+        return
+    prepare = phase == "prepare"
     state = load_state(section)
     seen = state.get("seen", [])
     webhook = cfg.get("webhook_env") or "DISCORD_WEBHOOK_AI"
@@ -631,15 +713,8 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                 overview = overview or write_overview(picked, cfg)
                 if overview:
                     embeds.insert(0, {"title": "📋 今日の動向まとめ", "description": overview, "color": 0x5C6BC0})
-            if (cfg.get("market") or {}).get("enabled"):   # news.market: 米国株の欄（src/market.py）
-                import market
-                try:
-                    mk = market.build_embed(cfg)
-                except Exception as ex:   # noqa: BLE001  株の欄が作れなくてもニュースは投稿する
-                    print("米国株の欄を作れませんでした:", ex)
-                    mk = None
-                if mk:
-                    embeds.insert(1 if overview else 0, mk)
+            if not prepare:   # 株式の欄は投稿の直前に作る（phase=post）
+                add_market(cfg, embeds)
             if (cfg.get("local") or {}).get("enabled"):   # news.local: 沿線の情報の欄（src/local_events.py）
                 import local_events
                 try:
@@ -647,37 +722,36 @@ def main(section: str = "ai_digest", seed: bool = False) -> None:
                 except Exception as ex:   # noqa: BLE001  沿線の欄が作れなくてもニュースは投稿する
                     print("沿線の欄を作れませんでした:", ex)
                     lo = []
-                try:   # news.local.summary: 受付中・開催中のまとめ（別のチャンネル）
-                    local_events.post_summary(cfg)
-                except Exception as ex:   # noqa: BLE001
-                    print("受付中・開催中のまとめを投稿できませんでした:", ex)
+                if not prepare:   # 別のチャンネルのまとめも、夜中には投稿しない
+                    post_local_summary(cfg)
                 at = sum(1 for e in embeds[:2] if e["title"].startswith(("📋", "📈")))   # まとめ・株式の次
                 embeds[at:at] = lo
             content = f"{icon} **{title}**（{jst}）候補{len(items)}件から{len(picked)}件"
             if cfg.get("notice"):
                 content += f"\n-# {cfg['notice'].strip()}"
-            ids = [] if cfg.get("keep_days") else None
-            try:
-                if cfg.get("split_posts"):   # 欄ごとに別の投稿にして、それぞれに画像を付ける
-                    post_sections(webhook, title, cfg, content, embeds, ids=ids)
-                else:
-                    post_discord(webhook, username=title, avatar_url=cfg.get("avatar_url"), content=content,
-                                 embeds=embeds, ids=ids)
-            except BaseException:
-                if notebook:   # 投稿に失敗したらノートを残さない（次回また作り直す）
-                    notebook.close()
-                raise
+            if prepare:
+                save_state(f"{section}_prepared", {"made": dt.datetime.now().isoformat(timespec="seconds"),
+                                                   "content": content, "embeds": embeds})
+                print(f"投稿を作り置きしました（投稿は phase=post で）: {len(embeds)} 欄")
+            else:
+                try:
+                    ids = publish(section, cfg, state, content, embeds)
+                except BaseException:
+                    if notebook:   # 投稿に失敗したらノートを残さない（次回また作り直す）
+                        notebook.close()
+                    raise
 
-    if cfg.get("keep_days") and os.environ.get("DRY_RUN") != "1":   # 古い投稿を消す
-        try:
-            delete_old_posts(webhook, state, int(cfg["keep_days"]), ids or [])
-        except Exception as ex:   # noqa: BLE001  消せなくても続ける
-            print("古い投稿を消せませんでした:", ex)
+    if not prepare:
+        finish_posts(cfg, state, ids)
     state["seen"] = trim_seen(seen + [it["id"] for it in items], 3000)
     save_state(section, state)   # 音声づくり（長い・失敗しうる）の前に既読を確定させる
     if seed:
         print(f"既読にしました: {len(items)} 件（投稿なし）")
 
+    if prepare:   # 作り置きのときは音声も作らない
+        if notebook:
+            notebook.close()
+        return
     if pod.get("enabled") and len(picked) >= int(pod.get("min_items", 1)):
         import podcast_nlm   # NotebookLM を使うときだけ読み込む
         podcast_nlm.run(picked, pod, webhook=webhook, username=title, notebook=notebook,
@@ -691,5 +765,9 @@ if __name__ == "__main__":
     #         python src/ai_digest.py ai_global  → ai_global（海外の話題）
     #         python src/ai_digest.py onco       → onco（がん薬物療法）
     #         python src/ai_digest.py onco --seed  → 今ある記事を既読にするだけ（初回用）
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    sys.exit(main(args[0] if args else "ai_digest", seed="--seed" in sys.argv))
+    #         python src/ai_digest.py news --phase prepare  → 朝のニュースを作り置き（3:00）
+    #         python src/ai_digest.py news --phase post     → 株式の欄を足して投稿（6:40）
+    argv = sys.argv[1:]
+    phase = argv[argv.index("--phase") + 1] if "--phase" in argv else ""
+    args = [a for a in argv if not a.startswith("--") and a != phase]
+    sys.exit(main(args[0] if args else "ai_digest", seed="--seed" in argv, phase=phase))

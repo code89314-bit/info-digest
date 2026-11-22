@@ -194,7 +194,7 @@ LLMサーバーを外部公開するのはセキュリティ上すすめない�
 - 情報源は NHK の RSS（主要・政治・経済・国際・科学医療・社会。広告なし・RSSに約100字の要約あり）と ITmedia NEWS。
   Yahoo・時事・朝日の RSS は見出しだけで要約の材料が無いので入れていない（Yahoo のリンク先も広告ページ）。
 - 関心は `focus` / `exclude` / `interests`。地震・医薬品供給は別チャンネルにあるので除外。先頭に3〜5行の「今日の動向まとめ」（`overview`）。
-- 投稿先 `DISCORD_WEBHOOK_NEWS`（.env）。既読管理 `state/news.json`。タスク「info-digest news」毎朝 6:50（`run_ai_digest.ps1 -Section news`）。
+- 投稿先 `DISCORD_WEBHOOK_NEWS`（.env）。既読管理 `state/news.json`。タスクは2つ（2026-11-22 から）: 「info-digest news prepare」3:00 で作り置き（`run_ai_digest.ps1 -Section news -Phase prepare`、`state/news_prepared.json`）→ 「info-digest news」6:40 で株式の欄を足して投稿（`-Phase post`）。
 - 2026-10-30 追加: 「📈 米国株」の欄（`src/market.py`、設定 `news.market`）。動向まとめの次に1つ。
   - 株価（S&P500・FANG+ の代表銘柄の終値と前日比）は Yahoo Finance のチャートAPI（キー不要）から取る。数字はLLMに作らせない。
   - 2026-10-30 変更: 欄の名前を「📈 株式」にし、銘柄を S&P500・エヌビディア・アルファベット・メタと日本株
