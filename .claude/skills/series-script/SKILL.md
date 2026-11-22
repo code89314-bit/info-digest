@@ -133,7 +133,14 @@ notebooklm list --json         # 認証の確認
    読みがなを付けた語は `style/series_yomi.yaml` に足す（まだ無いものだけ。読みは資料ではなく一般的な読み。迷う語は「要確認」と書く）。
 6. `state.json` の done に n を足す。本人への報告: 台本の字数（≒分数）、使った資料の数、外した論点、要確認の読み。
 
-## 音声にする（読み上げソフト。試している途中）
+## 音声にする（2026-11-23 本人が **Gemini** に決定）
+- **Gemini**: `scripts/tts_gemini.py <週のフォルダ> <n> --model gemini-3.8-flash-tts`（`--lines N`・`--start K` で一部だけ）。
+  1行ずつ（1回に1人の声）作り、（演出）は全部消し（Gemini は指示を読み上げてしまう）、行末に Gemini が足す
+  「ザザッ」というノイズ（短く・ギザギザで・音が割れている）を切ってから、間（0.35秒、場面の変わり目 0.9秒）でつなぐ。
+  声: 堀田=Charon、横井=Sulafat、司=Puck。無料枠は1日10回（17:00 に戻る）で、1話は約100〜120回 → 課金の設定が要る（本人が決める）。
+- 比べたもの（2026-11-22〜23、1倍・2倍で聞き比べ）: AivisSpeech（予備。`tts_aivis_breath.py` で句ごと・間だけ。声は series_voices.yaml）、
+  MOSS-TTSD（16GB では8bit で遅く、質が悪い）、Irodori v4（`tts_irodori4.py`。句ごとに作ると息つぎが入るが、Gemini には及ばない）。
+- 以下は試していたころのメモ。
 - 候補: **AivisSpeech**（ローカル・無料、:10101）と **VOICEVOX**（ローカル・無料、:50021）。同じ API なので `scripts/tts_render.py` で両方使える。
   まず両方で第1回の冒頭を作って本人が聞き比べる（2026-11-20 本人が了承）。満足できなければ Azure の読み上げも比べる。
 - 声の割り当ては `style/series_voices.yaml`（engine → 堀田・横井・司 の style id）。id は `tts_render.py --engine aivis --list`。
@@ -166,4 +173,4 @@ state.json の週に `episodes`（6 または 7）を記録する。
 - 使えるモデル: gemini-3.8-flash-tts（無料枠 1日10回）、gemini-2.5-flash-preview-tts（無料枠わずか）、gemini-2.5-pro-preview-tts（無料枠なし）。
 - 3.x のモデルは全体への指示文（systemInstruction）を受け付けず、台詞ごとに speechMetadata.speaker が要る。演出は台詞の中のタグ（[laughs] など）に置き換える（効くかは要確認）。
 - 1話（約100行）は話者2人ずつに区切って約40回の呼び出し。無料枠では足りず、従量課金の設定が要る（本人が決める）。
-- 声: 堀田=Charon、横井=Gacrux、司=Puck（2026-11-21 本人が聞き比べて決定）（本人: 司は低すぎない普通の高さ、丁寧だがノリが良い）。
+- 声: 堀田=Charon、横井=Sulafat（2026-11-23 に Gacrux から変更）、司=Puck（2026-11-21 本人が聞き比べて決定）（本人: 司は低すぎない普通の高さ、丁寧だがノリが良い）。
