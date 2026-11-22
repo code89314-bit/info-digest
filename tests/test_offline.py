@@ -1338,7 +1338,32 @@ assert "しらべ：保険点数" == nlm_notebooks.notebooks()["hoken"]["name"]
 qa_deep.strata_obj = qa_strata
 print("✅ drug names / notebooklm (shirabe)")
 
-# ---------- 週の連載: 夜中の自動の回の知らせ（src/series_notify.py） ----------
+# ---------- 朝のニュースの作り置き（3:00 prepare）→ 株式の欄を足して投稿（6:40 post） ----------
+import types  # noqa: E402
+_orig_post, _orig_market = ai_digest.post_discord, sys.modules.get("market")
+SENT_P = []
+ai_digest.post_discord = lambda w, **k: SENT_P.append(k)
+sys.modules["market"] = types.SimpleNamespace(build_embed=lambda cfg: {"title": "📈 株式", "description": "S&P500"})
+PCFG = {"title": "朝のニュース", "webhook_env": "W", "market": {"enabled": True}}
+assert ai_digest.post_prepared("newsp", PCFG) is False                      # 作り置きが無い → いつもどおり作る
+common.save_state("newsp_prepared", {"made": (dt.datetime.now() - dt.timedelta(hours=13)).isoformat(),
+                                     "content": "x", "embeds": []})
+assert ai_digest.post_prepared("newsp", PCFG) is False and not SENT_P      # 古すぎる作り置きは使わない
+common.save_state("newsp_prepared", {"made": dt.datetime.now().isoformat(), "content": "📰 見出し",
+                                     "embeds": [{"title": "📋 今日の動向まとめ"}, {"title": "📍 沿線"},
+                                                {"title": "🏛️ 政治・制度"}]})
+assert ai_digest.post_prepared("newsp", PCFG) is True
+assert [e["title"] for e in SENT_P[0]["embeds"]] == ["📋 今日の動向まとめ", "📈 株式", "📍 沿線", "🏛️ 政治・制度"]
+assert SENT_P[0]["content"] == "📰 見出し"
+assert ai_digest.post_prepared("newsp", PCFG) is False                      # 1回投稿したら使い終わり
+ai_digest.post_discord = _orig_post
+if _orig_market is not None:
+    sys.modules["market"] = _orig_market
+else:
+    sys.modules.pop("market")
+print("✅ news prepare / post")
+
+# ---------- 週の連載: 自動の回の知らせ（src/series_notify.py） ----------
 import series_notify  # noqa: E402
 SN = TMP / "last_run.json"
 t0 = dt.datetime.now() - dt.timedelta(minutes=1)

@@ -18,8 +18,13 @@
 - `config.yaml` は本人も編集する。日本語のコメントを残し、新しい項目には説明のコメントを付ける。空のリストは `cfg.get("x") or []` で受ける。
 - テストは `.venv\Scripts\python.exe tests\test_offline.py`（`$env:PYTHONIOENCODING='utf-8'`）。全部 ✅ を確かめてから PR。
 
+## 本人の一日（定時の時刻を決めるとき。2026-11-22）
+- 6:00 起床 → 学習の音声を聞く。6:30 朝食の支度中に がん薬物療法ニュースを聞く。7:00 に朝のニュース・株価を見る。
+- **21:00〜25:00 は本人がこの PC を使うコアタイム**（Strata を外すことがある）。定時の仕事は GPU を取り戻すので、この時間に Strata・GPU を使う仕事を入れない。
+- 本人が PC を使わない時間: 平日の 8:30〜12:00・14:00〜19:00（仕事・子どもの世話）。休日は一日じゅう使う可能性がある。
+
 ## 構成（自宅 PC で動く。Windows 11、RTX 4070 Ti SUPER 16GB、RAM 32GB）
-- **定時の配信**（Windows のタスク「info-digest …」）: 学習 4:00（NotebookLM の作業だけ先に。Discord への投稿は 5:50、`learn.post_at`）、AI ダイジェスト 5:30/5:35、がん薬物療法ニュース 6:00、朝のニュース＋株式の欄（`src/market.py`）＋横浜線沿線の欄（`src/local_events.py`）6:50、週の連載の台本（2:00、`scripts/run_series.ps1`）、note 下書き（水 8:00・土 7:00）、ギモン深堀りの音声は 8:00 から（`qa_bot.audio_reserve`）、note 毎日の記事（6:00 の回のあとに自動で公開、`src/note_daily.py`。2026-11-13 に本人が自動公開を決定。土曜は週刊号に任せて作らない）など。
+- **定時の配信**（Windows のタスク「info-digest …」）: 学習 4:00（NotebookLM の作業だけ先に。Discord への投稿は 5:50、`learn.post_at`）、AI ダイジェスト 5:30/5:35、がん薬物療法ニュース 6:00、朝のニュース＋横浜線沿線の欄（`src/local_events.py`）は 3:00 に作り置き（`-Phase prepare`、投稿しない）→ 6:40 に株式の欄（`src/market.py`、米国株の終値がそろってから）を足して投稿（`-Phase post`。作り置きが無ければいつもどおり作る）、週の連載の台本（14:00、`scripts/run_series.ps1`）、note 下書き（水 8:00・土 7:00）、ギモン深堀りの音声は 8:00 から（`qa_bot.audio_reserve`）、note 毎日の記事（6:00 の回のあとに自動で公開、`src/note_daily.py`。2026-11-13 に本人が自動公開を決定。土曜は週刊号に任せて作らない）など。
 - **Discord Bot**（タスク「info-digest qa bot」、`scripts/run_qa_bot.ps1` のループで落ちても60秒で再起動）: `src/qa_bot.py`
   - ギモン深堀り（`src/qa_deep.py`）: 疑問 → NotebookLM で一次資料を調べて note の下書き。
   - しらべ（トーク、`src/strata_chat.py`、`style/personas/shirabe.yaml`）: 雑談は Qwen3.6。調べものは NotebookLM（下記）。
@@ -72,9 +77,9 @@
 - NotebookLM のチャットには上限があり、約5時間で戻る（しらべの Bot・学習・ニュースと共通。約30問で断られ続けた 2026-11-20）。
   朝の定時（4:00・6:00）に響くので、夜遅く（23:00ごろ以降）に連載のために大量に聞かない。
   **日曜に準備、月〜土に1日1話**（本人が決定）。数字や経緯は `source fulltext`（回数に数えない）で読む。
-- 夜中の自動の回（2026-11-22 本人が決定）: タスク「info-digest series」毎日 2:00 → `scripts/run_series.ps1` → `claude -p "/series-script auto"`。
+- 自動の回（2026-11-22 本人が決定。時刻は同日 2:00 → 14:00 に変更）: タスク「info-digest series」毎日 14:00 → `scripts/run_series.ps1` → `claude -p "/series-script auto"`。
   月〜土は次の回、日曜は次の週の prep。結果は `.local/series/last_run.json` → `src/series_notify.py` が Discord（`series.webhook_env`）に知らせる。
-  2:00 に聞くと 4:00・6:00 のチャットの回数に響くのは本人が承知（1話8問まで、fulltext を優先）。パイロット版: EGFR 遺伝子変異陽性 非小細胞肺がん（構造系）。
+  14:00 なら朝 4:00・6:00 に使ったチャットの回数が戻っていて、ここで使った分も 19:00 に戻る（1話8問まで、fulltext を優先）。パイロット版: EGFR 遺伝子変異陽性 非小細胞肺がん（構造系）。
 
 ## 残っている話（2026-10-30 時点）
 - 大腸がんほかのガイドライン PDF（本人が「いつか足す」）。
