@@ -61,7 +61,7 @@ def main() -> None:
         ins += ("- 台本の話者は2人。1人が「堀田」の役（解説の中心）、もう1人が「横井」の役（問い・確かめ・別の視点・まとめ）を、"
                 "最後まで入れ替えずに、台本の割り振りどおりに受け持つ。名前は呼ばない。\n")
     pod.update(instructions=ins, length=a.length, format="deep-dive", language="ja",
-               title=f"連載音声の試し 第{a.n}回")
+               title=f"連載音声 第{a.n}回")
     limit = int(pod.get("daily_limit", 5))
     used = podcast_nlm.used_today(pod)
     print(f"音声の台帳: 今日 {used}/{limit}", flush=True)

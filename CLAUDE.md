@@ -74,7 +74,7 @@
 - NotebookLM のチャットには上限があり、約5時間で戻る（しらべの Bot・学習・ニュースと共通。約30問で断られ続けた 2026-11-20）。
   朝の定時（4:00・6:00）に響くので、夜遅く（23:00ごろ以降）に連載のために大量に聞かない。
   **日曜に準備、月〜土に1日1話**（本人が決定）。数字や経緯は `source fulltext`（回数に数えない）で読む。
-- 自動の回（2026-11-22 本人が決定。時刻は同日 2:00 → 14:00 に変更）: タスク「info-digest series」毎日 14:00 → `scripts/run_series.ps1` → `claude -p "/series-script auto"`。
+- 自動の回（2026-11-22 本人が決定。時刻は同日 2:00 → 14:00 に変更）: タスク「info-digest series」毎日 14:00 → `scripts/run_series.ps1` → `claude -p "/series-script auto"`。台本ができたら続けて NotebookLM の音声（`src/series_audio.py`、`series.audio`、2026-11-23 本人が決定）。
   月〜土は次の回、日曜は次の週の prep。結果は `.local/series/last_run.json` → `src/series_notify.py` が Discord（`series.webhook_env`）に知らせる。
   14:00 なら朝 4:00・6:00 に使ったチャットの回数が戻っていて、ここで使った分も 19:00 に戻る（1話8問まで、fulltext を優先）。パイロット版: EGFR 遺伝子変異陽性 非小細胞肺がん（構造系）。
 

@@ -134,6 +134,7 @@ def _empty_line_at(page, mark: str, after_heading: str | None = None) -> bool:
         return True
     if para.count() == 0:
         return False
+    para = para.element_handle()   # 固定する（locator のままだと、文字を消したあと次の位置メモの段落を指してしまう）
     para.scroll_into_view_if_needed()
     para.click()
     # 段落の中身をまるごと選んで消す（End / Shift+Home だと折り返した1行分しか選べない）
@@ -142,8 +143,9 @@ def _empty_line_at(page, mark: str, after_heading: str | None = None) -> bool:
     page.wait_for_timeout(300)
     page.keyboard.press("Delete")
     page.wait_for_timeout(800)
-    if para.count() and para.inner_text().strip():
-        raise RuntimeError(f"位置メモを消しきれませんでした: {para.inner_text()[:30]}")
+    left = para.evaluate("p => p.isConnected ? p.innerText : ''").strip()   # エディタが段落を作り直したら消えている
+    if mark in left:
+        raise RuntimeError(f"位置メモを消しきれませんでした: {left[:30]}")
     return True
 
 
@@ -200,8 +202,10 @@ def set_cover(page, path: str) -> None:
     page.wait_for_timeout(3000)
 
 
-def finish(page, audio: dict | None, cover: str | None = None) -> list[str]:
-    """本文を入れたあとの仕上げ: トップ画像・空の引用を消す・目次・音声。できなかったことを返す（下書きは残す）。"""
+def finish(page, audio: dict | list[dict] | None, cover: str | None = None) -> list[str]:
+    """本文を入れたあとの仕上げ: トップ画像・空の引用を消す・目次・音声。できなかったことを返す（下書きは残す）。
+
+    audio を list で渡すと、本文の位置メモ（AUDIO_MARK）に上から順に1つずつ貼る（週の連載の「まとめて聴く」）。"""
     todo = []
     if cover:
         try:
@@ -217,7 +221,9 @@ def finish(page, audio: dict | None, cover: str | None = None) -> list[str]:
             _open_menu_item(page, "目次")
     except Exception as ex:   # noqa: BLE001
         todo.append(f"目次を入れられませんでした（{str(ex)[:80]}）")
-    if audio and audio.get("path"):
+    for audio in ([] if not audio else audio if isinstance(audio, list) else [audio]):   # 1つ、または複数（連載のまとめ）
+        if not audio.get("path"):
+            continue
         try:
             if not _empty_line_at(page, AUDIO_MARK, audio.get("heading") or "音声版"):
                 raise RuntimeError("音声の位置メモが見つかりません")
