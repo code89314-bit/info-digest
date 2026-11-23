@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 d, n = Path(sys.argv[1]), sys.argv[2]
-SPEAKERS = ("堀田", "横井", "司")
 script = (d / f"ep{n}-script.md").read_text(encoding="utf-8").split("---", 2)[2]
+# 2026-11-23 から2人（堀田・横井。NotebookLM の音声の2人に合わせる）。それより前の回は3人（司あり）
+SPEAKERS = ("堀田", "横井", "司") if re.search(r"^司:", script, re.M) else ("堀田", "横井")
 facts = (d / f"ep{n}-facts.md").read_text(encoding="utf-8")
 lines = [ln for ln in script.splitlines() if re.match(r"^(堀田|横井|司):", ln)]
 bad = [ln for ln in script.splitlines() if ln.strip() and not ln.startswith("## ") and not re.match(r"^(堀田|横井|司):", ln)]
@@ -23,7 +24,7 @@ def plain(t):
 tot = sum(len(spoken(ln)) for ln in lines)
 print(f"spoken chars: {tot}  (~{tot / 300:.1f} min, guide ~6000 / 20 min; may run over (nobody stops teru) or stop early at a good break)")
 print("share %:", {s: round(sum(len(spoken(ln)) for ln in lines if ln.startswith(s + ":")) / tot * 100) for s in SPEAKERS},
-      "(target teru 45-50 / shirabe 25-30 / wata 20-25)")
+      "(target 堀田 45-50 / 横井 25-30 / 司 20-25)" if len(SPEAKERS) == 3 else "(target 堀田 55-65 / 横井 35-45)")
 run = mx = 1
 for a, b in zip(lines, lines[1:]):
     run = run + 1 if a.split(":")[0] == b.split(":")[0] else 1
