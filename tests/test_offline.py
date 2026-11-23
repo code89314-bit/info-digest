@@ -1377,7 +1377,26 @@ assert series_notify.read_last(dt.datetime.now() + dt.timedelta(minutes=5), SN) 
 e = series_notify.embed(None, "x https://discord.com/api/webhooks/123/abc y")
 assert "止まりました" in e["title"] and "abc" not in e["description"] and "webhooks/***" in e["description"]
 assert series_notify.embed({"status": "skip", "action": "none"})["title"].endswith("作るものがありません")
+assert "🎧 音声: ep3-nlm.mp3（約23分）" in series_notify.embed({**run, "audio": "ep3-nlm.mp3", "audio_minutes": 22.9})["description"]
+assert "作れませんでした: 枠" in series_notify.embed({**run, "audio_error": "枠"})["description"]
 print("✅ series notify")
+
+# ---------- 週の連載: 台本ができたら NotebookLM の音声（src/series_audio.py） ----------
+import series_audio  # noqa: E402
+assert series_audio.parse("音声の台帳: 今日 2/5\nsaved: .local\\series\\w\\audio\\ep4-nlm.mp3 (22.9 分)\n") == ("ep4-nlm.mp3", 22.9)
+assert series_audio.parse("今日の音声の枠を使い切っています") is None
+assert series_audio.target(None) is None
+assert series_audio.target({"status": "ok", "action": "prep", "week": "w"}) is None          # 準備の日は作らない
+assert series_audio.target({"status": "error", "action": "ep", "week": "w", "episode": 4}) is None
+assert series_audio.target({"status": "ok", "action": "ep", "week": "no-such-week", "episode": 4}) is None   # 台本が無い
+print("✅ series audio")
+
+# ---------- 週の連載: note の下書き（src/series_note.py） ----------
+import series_note  # noqa: E402
+h = series_note.md_to_html("# 題\n## 年表\n| 年月 | 出来事 |\n|---|---|\n| 2002年7月 | **承認** |\n\n- 箇条\n本文 [出典](https://example.org)")
+assert "<h2>年表</h2>" in h and "<li><strong>2002年7月</strong>：<strong>承認</strong></li>" in h and "題" not in h
+assert "年月" not in h and '<a href="https://example.org">出典</a>' in h and "<li>箇条</li>" in h
+print("✅ series note")
 
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)

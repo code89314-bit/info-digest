@@ -1,6 +1,6 @@
 """週の連載: 自動の回（毎日 14:00、scripts/run_series.ps1）が終わったら、結果を Discord に知らせる。
 
-Claude Code のスキル `/series-script auto` が、最後に `.local/series/last_run.json` を書く:
+Claude Code のスキル `/series-script auto` が、最後に `.local/series/last_run.json` を書く（音声ができたら src/series_audio.py が audio を足す）:
   {"date": "2026-11-23", "status": "ok" | "error" | "skip", "action": "ep" | "prep" | "none",
    "week": "...", "episode": 3, "title": "...", "chars": 7000, "minutes": 23.3,
    "notes": ["要確認: ..."], "message": "..."}
@@ -62,6 +62,10 @@ def embed(run: dict | None, log_tail: str = "") -> dict:
         rows.append(f"台本: 約{int(run['chars']):,}字（約{float(run.get('minutes') or run['chars'] / 300):.0f}分）")
     if run.get("message"):
         rows.append(str(run["message"]))
+    if run.get("audio"):     # src/series_audio.py が足す（NotebookLM の音声）
+        rows.append(f"🎧 音声: {run['audio']}（約{float(run.get('audio_minutes') or 0):.0f}分）")
+    elif run.get("audio_error"):
+        rows.append(f"🎧 音声は作れませんでした: {run['audio_error']}")
     notes = [str(n) for n in run.get("notes") or []]
     if notes:
         rows.append("気になる点:\n" + "\n".join(f"• {n}" for n in notes[:10]))

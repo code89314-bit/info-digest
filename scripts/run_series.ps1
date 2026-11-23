@@ -1,7 +1,8 @@
 # Weekly series (Windows Task Scheduler: task "info-digest series", daily 14:00; it was 02:00 until 2026-11-22).
 # Runs the Claude Code skill "/series-script auto" without a person at the keyboard:
 #   Mon-Sat: the next episode of the current week. Sun: prep of the next week. Nothing to do: it says so.
-# The skill writes .local\series\last_run.json; src\series_notify.py posts the result to Discord.
+# The skill writes .local\series\last_run.json; src\series_audio.py makes the NotebookLM audio of a new episode;
+# src\series_notify.py posts the result to Discord.
 # Output stays in .local\series\ (not committed). Nothing is published.
 # NOTE: keep this file ASCII-only (Windows PowerShell 5.1 reads .ps1 as ANSI).
 param([string]$Prompt = '/series-script auto')
@@ -27,6 +28,9 @@ $tools = 'Skill Read Write Edit Glob Grep Bash PowerShell'
 & $claude -p $Prompt --permission-mode acceptEdits --allowedTools $tools.Split(' ') --output-format text 2>&1 |
     ForEach-Object { Log $_ }
 Log "claude exit: $LASTEXITCODE"
+
+# A new episode script -> its NotebookLM audio (src\series_audio.py; 20-30 min; config series.audio). Added 2026-11-23.
+& $python (Join-Path $root 'src\series_audio.py') --started $started 2>&1 | ForEach-Object { Log $_ }
 
 & $python (Join-Path $root 'src\series_notify.py') --started $started --log $log 2>&1 | ForEach-Object { Log $_ }
 Log 'done'
