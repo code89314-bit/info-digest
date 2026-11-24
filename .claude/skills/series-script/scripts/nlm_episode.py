@@ -3,7 +3,7 @@
 - A notebook with only this episode's script (readings removed, directions removed) and fact cards, so the hosts
   talk from these and nothing else.
 - The instructions ask them to follow the script's order, use only numbers in the sources, and not mention a script.
-  Readings (style/nlm_yomi.yaml) are added by podcast_nlm.readings_note (never spoken about).
+  Readings (style/nlm_yomi.yaml) are added by podcast_nlm.readings_note (never spoken about), only for words in the script/facts.
 - Uses the audio quota (shared ledger, learn.podcast settings). Download -> .local/series/<week>/audio/ep<n>-nlm.mp3.
   The opening (title call) and the closing are made separately and joined afterwards (nlm_episode_wrap).
 
@@ -70,10 +70,14 @@ def main() -> None:
     nb = podcast_nlm.Notebook(pod, [])
     try:
         title = re.search(r"^title:\s*(.+)$", script.read_text(encoding="utf-8"), re.M)
-        nb.add_text(f"第{a.n}回 台本", plain(script))
+        body = plain(script)
+        nb.add_text(f"第{a.n}回 台本", body)
         facts = d / f"ep{a.n}-facts.md"
-        if facts.exists():
-            nb.add_text(f"第{a.n}回 事実カード", re.sub(r"\{([^|}]*)\|[^}]*\}", r"\1", facts.read_text(encoding="utf-8")))
+        card = re.sub(r"\{([^|}]*)\|[^}]*\}", r"\1", facts.read_text(encoding="utf-8")) if facts.exists() else ""
+        if card:
+            nb.add_text(f"第{a.n}回 事実カード", card)
+        pod["yomi_scope"] = body + "\n" + card   # 読み方は、台本と事実カードに出てくる言葉だけ渡す（2026-11-24 本人）
+        print("読み方:", podcast_nlm.readings_note(only_in=pod["yomi_scope"]).split(": ", 1)[-1][:200] or "なし", flush=True)
         print("資料:", [s["title"] for s in nb.sources()], "題:", title.group(1) if title else "-", flush=True)
         out = d / "audio" / f"ep{a.n}-nlm{'-2p' if '-2p' in script.stem else ''}.mp3"
         out.parent.mkdir(exist_ok=True)

@@ -25,14 +25,17 @@ from pathlib import Path
 YOMI_FILE = Path(__file__).resolve().parent.parent / "style" / "nlm_yomi.yaml"
 
 
-def readings_note(path: Path = YOMI_FILE) -> str:
-    """style/nlm_yomi.yaml（表記: よみ）を、音声の指示に付ける1文にする。無ければ空。"""
+def readings_note(path: Path = YOMI_FILE, only_in: str | None = None) -> str:
+    """style/nlm_yomi.yaml（表記: よみ）を、音声の指示に付ける1文にする。無ければ空。
+
+    only_in を渡すと、その文章に出てくる言葉の読みだけにする（週の連載は台本が先にあるので、台本に無い言葉は渡さない。
+    指示に入れた言葉に音声の中身が引っ張られることがあった 2026-11-24 本人）。"""
     try:
         import yaml
         d = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception:
         return ""
-    pairs = [f"「{k}」は「{v}」" for k, v in d.items() if k and v]
+    pairs = [f"「{k}」は「{v}」" for k, v in d.items() if k and v and (only_in is None or str(k) in only_in)]
     # 読み方は発音に使うだけ。番組の中で「〜と読みます」と説明・補足させない（2026-11-21 本人）
     return ("\n（制作メモ。番組の中では触れないこと）次の言葉はこの読み方で発音する: " + "、".join(pairs) +
             "。読み方についての説明や補足は、音声の中で一切しない。") if pairs else ""
@@ -301,7 +304,7 @@ class Notebook:
 
     def audio(self, out_path: Path) -> None:
         pod = self.pod
-        args = ["generate", "audio", ((pod.get("instructions") or "").strip() + readings_note()).strip(), "-n", self.nb,
+        args = ["generate", "audio", ((pod.get("instructions") or "").strip() + readings_note(only_in=pod.get("yomi_scope"))).strip(), "-n", self.nb,
                 "--format", pod.get("format", "deep-dive"), "--length", pod.get("length", "default"),
                 "--language", pod.get("language", "ja"), "--retry", "2", "--json"]
         # 台帳では枠が残っていても、Google が「作りすぎ」（RateLimitError）と断ることがある。間をおいて作り直す
