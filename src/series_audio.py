@@ -36,7 +36,8 @@ def target(run: dict | None) -> tuple[Path, int] | None:
 
 def parse(out: str) -> tuple[str, float] | None:
     """nlm_episode.py の出力の「saved: <パス> (22.9 分)」から、ファイル名と分。"""
-    m = re.search(r"saved:\s*(.+?)\s*\(([\d.]+)\s*分\)", out)
+    # 「分」は文字化けしても拾えるようにする（-I では PYTHONIOENCODING が効かず、cp932 で出ることがあった 2026-11-24）
+    m = re.search(r"saved:\s*(.+?\.mp3)\s*\(([\d.]+)", out)
     return (Path(m.group(1).strip()).name, float(m.group(2))) if m else None
 
 
@@ -56,7 +57,7 @@ def main() -> None:
     d, n = t
     print(f"音声を作る: {d.name} 第{n}回", flush=True)
     try:
-        p = subprocess.run([sys.executable, "-I", str(SCRIPT), str(d), str(n), "--length", "long"],
+        p = subprocess.run([sys.executable, "-I", "-X", "utf8", str(SCRIPT), str(d), str(n), "--length", "long"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=TIMEOUT, cwd=str(common.ROOT), env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         out = (p.stdout or "") + (p.stderr or "")
