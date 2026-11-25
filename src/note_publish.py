@@ -264,11 +264,15 @@ def save_and_publish(title: str, body_html: str, *, audio: dict | None = None, c
                            publish_tags=publish_tags)
 
 
-def _press_publish(page, tags: list[str]) -> str:
-    """「公開に進む」→ ハッシュタグを入れる → 「投稿する」。記事タイプ（無料）などの設定は触らない。公開後のURLを返す。"""
+def _open_publish(page) -> None:
+    """編集画面の「公開に進む」→ 公開設定の画面。headless では画面が移らない（2026-11-25）ので、ブラウザを表示して使う。"""
+    page.keyboard.press("Escape")   # 「AIと構成づくり…」の吹き出しを閉じる
     page.get_by_role("button", name="公開に進む").first.click()
     page.wait_for_url("**/publish/**", timeout=60000)
     page.wait_for_timeout(4000)
+
+
+def _add_tags(page, tags: list[str]) -> None:
     box = page.get_by_placeholder("ハッシュタグを追加する").first
     box.wait_for(timeout=30000)
     for t in tags:
@@ -277,8 +281,34 @@ def _press_publish(page, tags: list[str]) -> str:
         page.wait_for_timeout(700)
         box.press("Enter")
         page.wait_for_timeout(1000)
-    _shot(page, "publish-settings")
-    page.get_by_role("button", name="投稿する", exact=True).first.click()
+
+
+def add_to_magazine(page, magazine: str) -> str:
+    """公開設定の画面の「記事の追加 → マガジン」で、名前に magazine を含むマガジンの「追加」を押す（2026-11-25 本人）。
+    "added"（今回追加）/ "already"（追加済）を返す。見つからなければ RuntimeError。"""
+    tab = page.get_by_role("checkbox", name="マガジン", exact=True).first
+    if tab.count() and tab.get_attribute("aria-checked") != "true":
+        tab.click()
+        page.wait_for_timeout(1500)
+    btn = page.locator("div", has_text=magazine).filter(has=page.get_by_role("button", name=re.compile(r"^追加")))         .last.get_by_role("button", name=re.compile(r"^追加")).first
+    try:
+        btn.wait_for(timeout=15000)
+    except Exception as ex:   # noqa: BLE001
+        raise RuntimeError(f"マガジン「{magazine}」が公開設定の画面に見つかりません") from ex
+    if btn.inner_text().strip() == "追加済":
+        return "already"
+    btn.click()
+    for _ in range(10):
+        page.wait_for_timeout(1000)
+        if btn.inner_text().strip() == "追加済":
+            return "added"
+    raise RuntimeError(f"マガジン「{magazine}」の「追加」が「追加済」になりませんでした")
+
+
+def _press_post(page) -> str:
+    """公開設定の画面で「投稿する」（下書き）か「更新する」（公開済み）を押し、公開後のURLを返す。"""
+    post = page.get_by_role("button", name=re.compile(r"^(投稿する|更新する)$")).first
+    post.click()
     end = time.time() + 120
     while time.time() < end and "/publish/" in page.url:   # 投稿が終わると記事のページへ移る
         # 「5日連続投稿！」などのお祝いの画面が出ると、公開できていても記事のページへ移らない（2026-11-20）
@@ -290,6 +320,49 @@ def _press_publish(page, tags: list[str]) -> str:
         raise RuntimeError("「投稿する」のあと画面が変わりませんでした（公開されたか note で確認してください）")
     page.wait_for_timeout(3000)
     return page.url
+
+
+def _press_publish(page, tags: list[str]) -> str:
+    """「公開に進む」→ ハッシュタグを入れる → 「投稿する」。記事タイプ（無料）などの設定は触らない。公開後のURLを返す。"""
+    _open_publish(page)
+    _add_tags(page, tags)
+    _shot(page, "publish-settings")
+    return _press_post(page)
+
+
+def publish_with_magazine(edit_url: str, magazine: str, tags: list[str] | None = None,
+                          dry_run: bool = False) -> tuple[str, str]:
+    """下書き（または公開済み）の記事を公開し、マガジンに追加する（週の連載。本人が確かめてから使う）。
+    公開済みの記事なら「更新する」でマガジンへの追加だけになる。dry_run なら押さずに状態だけ返す。
+    戻り値は（記事のURL, マガジンの状態 "added"/"already"/"dry-run: …"）。"""
+    from playwright.sync_api import sync_playwright
+    with _profile_lock(), sync_playwright() as p:
+        ctx = _context(p, False)
+        page = ctx.new_page()
+        try:
+            page.goto(edit_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(8000)
+            if "/login" in page.url:
+                raise NeedLogin("note のログインが切れています（このPCで `python src/note_publish.py --login`）")
+            _open_publish(page)
+            if tags:
+                _add_tags(page, tags)
+            if dry_run:
+                btn = page.locator("div", has_text=magazine).filter(
+                    has=page.get_by_role("button", name=re.compile(r"^追加"))).last.get_by_role(
+                    "button", name=re.compile(r"^追加")).first
+                state = btn.inner_text().strip() if btn.count() else "マガジンが見つからない"
+                post = page.get_by_role("button", name=re.compile(r"^(投稿する|更新する)$")).first.inner_text()
+                return edit_url, f"dry-run: マガジン={state}・ボタン={post}"
+            state = add_to_magazine(page, magazine)
+            _shot(page, "publish-magazine")
+            return _press_post(page), state
+        except NeedLogin:
+            raise
+        except Exception as ex:
+            raise RuntimeError(f"{ex}（画面: {_shot(page, 'publish-magazine-error')}）") from ex
+        finally:
+            ctx.close()
 
 
 def published_url(edit_url: str) -> str:

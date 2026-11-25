@@ -5,6 +5,8 @@
 結果を last_run.json に足す（series_notify.py が Discord の知らせに載せる）:
   "audio": "ep4-nlm.mp3", "audio_minutes": 22.9   /  失敗したら "audio_error": "理由"
 設定 config.yaml の series.audio（false で作らない）。音声の枠（1日5本、学習・ニュース・ギモン深堀りと共通）を1本使う。
+できた音声は 10MB 以下に縮めて Discord（series.webhook_env）にも貼る（2026-11-25 本人。note の下書きの音声は公開するまで聴けないため）。
+series.audio_discord: false で貼らない。貼れなかったら "audio_post_error" を足す。
 
 usage: python src/series_audio.py --started <ISO 日時>
 """
@@ -19,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import common  # noqa: E402
+import podcast_nlm  # noqa: E402
 import series_notify  # noqa: E402
 
 SCRIPT = common.ROOT / ".claude" / "skills" / "series-script" / "scripts" / "nlm_episode.py"
@@ -39,6 +42,21 @@ def parse(out: str) -> tuple[str, float] | None:
     # 「分」は文字化けしても拾えるようにする（-I では PYTHONIOENCODING が効かず、cp932 で出ることがあった 2026-11-24）
     m = re.search(r"saved:\s*(.+?\.mp3)\s*\(([\d.]+)", out)
     return (Path(m.group(1).strip()).name, float(m.group(2))) if m else None
+
+
+def post_audio(cfg: dict, mp3: Path, n: int, title: str = "") -> None:
+    """音声を 9.5MB 以下に縮めて（<名前>-discord.mp3）、series.webhook_env の Discord に貼る。"""
+    import shutil
+    ff = shutil.which("ffmpeg") or "ffmpeg"
+    small = mp3.with_name(mp3.stem + "-discord.mp3")
+    secs = podcast_nlm.compress(mp3, small, 9.5, ff)
+    msg = f"🎧 週の連載 第{n}回{(' ' + title) if title else ''}（約{secs / 60:.0f}分・NotebookLM の音声）"
+    common.post_discord_file(cfg.get("webhook_env") or "DISCORD_WEBHOOK_NOTE", small, msg)
+
+
+def script_title(d: Path, n: int) -> str:
+    m = re.search(r"^title:\s*(.+)$", (d / f"ep{n}-script.md").read_text(encoding="utf-8"), re.M)
+    return m.group(1).strip() if m else ""
 
 
 def main() -> None:
@@ -65,6 +83,12 @@ def main() -> None:
         got = parse(out)
         if got:
             run["audio"], run["audio_minutes"] = got
+            if cfg.get("audio_discord", True):
+                try:
+                    post_audio(cfg, d / "audio" / got[0], n, script_title(d, n))
+                    run["audio_posted"] = True
+                except Exception as ex:   # noqa: BLE001  貼れなくても音声はできている
+                    run["audio_post_error"] = series_notify.mask(str(ex))[:300]
         else:
             tail = [ln for ln in out.strip().splitlines() if ln.strip()][-1:] or [f"exit {p.returncode}"]
             run["audio_error"] = tail[0][:300]
