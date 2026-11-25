@@ -64,6 +64,8 @@ def embed(run: dict | None, log_tail: str = "") -> dict:
         rows.append(str(run["message"]))
     if run.get("audio"):     # src/series_audio.py が足す（NotebookLM の音声）
         rows.append(f"🎧 音声: {run['audio']}（約{float(run.get('audio_minutes') or 0):.0f}分）")
+        if run.get("audio_post_error"):
+            rows.append(f"🎧 Discord に貼れませんでした: {run['audio_post_error']}")
     elif run.get("audio_error"):
         rows.append(f"🎧 音声は作れませんでした: {run['audio_error']}")
     notes = [str(n) for n in run.get("notes") or []]

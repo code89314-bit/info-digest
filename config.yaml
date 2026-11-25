@@ -678,6 +678,9 @@ series:
   # 台本ができたら続けて NotebookLM の音声も作る（2026-11-23 本人が決定。src/series_audio.py、20〜30分）。
   # 音声の枠（1日5本、学習・ニュース・ギモン深堀りと共通）を1本使う。false にすると台本だけ
   audio: true
+  # できた音声を 10MB 以下に縮めて、上の webhook_env の Discord にも貼る（2026-11-25 本人。note の下書きの音声は
+  # 公開するまで聴けないため）。false にすると貼らない
+  audio_discord: true
   # 上から順に1週ずつ。type: structure（構造系）/ class（クラス追跡）/ drug（ドキュメンタリー）
   #   notebook: 使う専門ノートのキー（style/nlm_notebooks.yaml。ガイドライン PDF が入っている）
   #   drugs:    class で比べる薬（商品名。資料を薬ごとに集める）

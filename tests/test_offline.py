@@ -1386,6 +1386,9 @@ import series_audio  # noqa: E402
 assert series_audio.parse("音声の台帳: 今日 2/5\nsaved: .local\\series\\w\\audio\\ep4-nlm.mp3 (22.9 分)\n") == ("ep4-nlm.mp3", 22.9)
 assert series_audio.parse("今日の音声の枠を使い切っています") is None
 assert series_audio.target(None) is None
+import series_publish  # noqa: E402
+assert series_publish.edit_url("n02f6955ae9d5") == "https://editor.note.com/notes/n02f6955ae9d5/edit/"
+assert series_publish.edit_url("https://note.com/code/n/n02f6955ae9d5") == "https://editor.note.com/notes/n02f6955ae9d5/edit/"
 assert series_audio.target({"status": "ok", "action": "prep", "week": "w"}) is None          # 準備の日は作らない
 assert series_audio.target({"status": "error", "action": "ep", "week": "w", "episode": 4}) is None
 assert series_audio.target({"status": "ok", "action": "ep", "week": "no-such-week", "episode": 4}) is None   # 台本が無い
