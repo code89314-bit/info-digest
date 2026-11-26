@@ -179,14 +179,34 @@ def write(nb, style: dict, question: str, plan: dict) -> dict:
     issue = style.get("issue") or {}
     max_points = int(issue.get("max_points", 5))
     srcs = [s for s in (nb.sources() if hasattr(nb, "sources") else []) if s.get("url")]
-    data = parse_obj(nb.ask(WRITE_PROMPT.format(
+    data = parse_obj(nb.ask(write_prompt(style, question, plan, rules, max_points, srcs)))
+    titles = {s["url"]: s["title"] for s in srcs}
+    return _sections(data, titles, max_points)
+
+
+def source_list(srcs: list[dict], limit: int) -> str:
+    """まとめの依頼に付ける資料の一覧。一次資料を先に、limit 件まで（2026-11-26: 84件を並べたら NotebookLM に
+    「質問が長すぎる」と断られた）。題は80字まで。"""
+    tagged = [(is_primary(s["url"], s["title"]), s) for s in srcs]
+    picked = [s for p, s in tagged if p] + [s for p, s in tagged if not p]
+    lines = [f"- {'［一次資料］' if p else '［解説・二次］'}{s['title'][:80]} — {s['url']}"
+             for s in picked[:limit] for p in [is_primary(s["url"], s["title"])]]
+    if len(picked) > limit:
+        lines.append(f"- （ほか {len(picked) - limit} 件はノートの資料にあります）")
+    return "\n".join(lines) or "（URL の一覧なし）"
+
+
+def write_prompt(style: dict, question: str, plan: dict, rules: str, max_points: int, srcs: list[dict]) -> str:
+    limit = int((style.get("issue") or {}).get("max_listed_sources", 40))
+    return WRITE_PROMPT.format(
         digest=(style.get("prompt_digest") or "").strip(), rules=rules, question=question,
         interpretation=plan["interpretation"] or "（なし）", max_points=max_points,
         points="\n".join(f"- {p}" for p in plan["points"]),
-        sources="\n".join(f"- {'［一次資料］' if is_primary(s['url'], s['title']) else '［解説・二次］'}"
-                          f"{s['title']} — {s['url']}" for s in srcs) or "（URL の一覧なし）",
-        example=((style.get("section_block") or {}).get("format_example") or "").strip())))
-    titles = {s["url"]: s["title"] for s in srcs}
+        sources=source_list(srcs, limit),
+        example=((style.get("section_block") or {}).get("format_example") or "").strip())
+
+
+def _sections(data: dict, titles: dict, max_points: int) -> dict:
     sections = []
     for s in data.get("sections") or []:
         if not isinstance(s, dict) or not clean(s.get("heading")) or not _strs(s.get("paragraphs")):

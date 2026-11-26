@@ -57,6 +57,7 @@ issue:
   afterword_heading: 編集後記
   afterword: "【任意：ご自身で一言。不要ならこの見出しごと削除】"
   max_points: 5
+  max_listed_sources: 40   # まとめを頼むときに並べる資料の数（一次資料が先。多すぎると NotebookLM に断られる 2026-11-26）
 
 opening_notice:
   heading: この記事について
