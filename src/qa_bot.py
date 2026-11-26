@@ -57,6 +57,8 @@ WRITING_EXIT = re.compile(r"執筆(を)?(やめ|止め|おわ|終わ|終え)|執
 WRITING_LEAVE = re.compile(r"プロンプト|絵にして|絵を描|絵が見たい|イラスト")   # 「描いて」は執筆中は「描写して」の意味が多いので入れない
 # モードを変える前の確認（ask_switch）への返事
 YES_RE = re.compile(r"^(はい|うん|いいよ|いい|ok|おk|おけ|お願い|おねがい|yes|y|やって|どうぞ|ええ|そうして|切り替えて)[!！。、w～ー〜♪💛❤]*$", re.I)
+RETRY_RE = re.compile(r"^(やり直し|やりなおし|やり直して|もう一度|再実行|retry)[!！。]*$", re.I)
+RETRY_FLAG = Path(__file__).resolve().parent.parent / ".local" / "state" / "qa_retry.flag"   # 置くと、起動時に最後の失敗をやり直す
 NO_RE = re.compile(r"^(いいえ|いや|だめ|ダメ|やめて?|no|n|ううん|キャンセル|しない|いらない|まだ)[!！。、w～ー〜]*$", re.I)
 NOVEL_MARK = "📖 "                                                      # 小説の投稿の頭（履歴では短くする）
 PROMPTS_MARK = "🖋️ "                                                    # プロンプトを作った報告
@@ -151,6 +153,9 @@ class QABot(discord.Client):
         if getattr(app, "team", None):
             self.owners |= {m.id for m in app.team.members}
         log.info("ready: %s / channel %s / owners %s", self.user, self.channel_id, self.owners)
+        if RETRY_FLAG.exists():   # Claude Code などが「最後に失敗したギモン深堀りをやり直す」ときに置く（2026-11-26）
+            RETRY_FLAG.unlink(missing_ok=True)
+            self.loop.create_task(self.retry_last_failed())
 
     async def on_message(self, msg: discord.Message) -> None:
         if msg.author.bot or msg.author.id not in self.owners or msg.channel.id == self.luna_channel_id:
@@ -160,6 +165,9 @@ class QABot(discord.Client):
             return
         if self.chat_channel_id and msg.channel.id == self.chat_channel_id:
             self.loop.create_task(self.chat(msg))
+            return
+        if getattr(msg.channel, "parent_id", None) == self.channel_id and RETRY_RE.match(msg.content.strip()):
+            await self.retry_thread(msg.channel)
             return
         if msg.channel.id in self.qa_wait:   # 「Strata を起動しますか？」への返事（ギモン深堀りのスレッド）
             await self.answer_qa_wait(msg)
@@ -176,6 +184,33 @@ class QABot(discord.Client):
         await thread.send("受け付けました。患者情報の確認 → 解釈 → 資料集め → まとめ → note 下書きの順に進めます"
                           + (f"（前に {pos} 件あります）" if pos else "") + "。20〜30分ほどかかります。")
         await self.queue.put((text, thread))
+
+    async def retry_thread(self, thread) -> None:
+        """ギモン深堀りのスレッドの元の質問（スレッドを作った発言）を、もう一度調べる。"""
+        try:
+            starter = thread.starter_message or await thread.parent.fetch_message(thread.id)
+        except Exception:   # noqa: BLE001
+            await thread.send("⚠️ 元の質問が見つかりませんでした。チャンネルにもう一度書いてください。")
+            return
+        text = starter.content.strip()
+        if await self.ask_start_llm(text, thread):
+            return
+        pos = self.queue.qsize()
+        await thread.send("もう一度調べます（20〜30分ほど）" + (f"（前に {pos} 件あります）" if pos else "") + "。")
+        await self.queue.put((text, thread))
+
+    async def retry_last_failed(self) -> None:
+        """いちばん新しい「⚠️ 調べられませんでした」で終わったスレッドをやり直す。"""
+        await self.wait_until_ready()
+        ch = self.get_channel(self.channel_id)
+        threads = sorted(ch.threads, key=lambda t: t.id, reverse=True) if ch else []
+        for t in threads[:10]:
+            last = [m async for m in t.history(limit=1)]
+            if last and last[0].author.id == self.user.id and last[0].content.startswith("⚠️ 調べられませんでした"):
+                log.info("retry: %s", t.name)
+                await self.retry_thread(t)
+                return
+        log.info("retry: 失敗したスレッドが見つかりません")
 
     async def ask_start_llm(self, text: str, thread) -> bool:
         """Strata が止まっていたら、理由を出して起動するか聞く（2026-11-26 本人）。聞いたら True（答えは answer_qa_wait）。
@@ -1101,7 +1136,7 @@ class QABot(discord.Client):
                 await self.handle(qid, text, thread)
             except Exception as ex:   # noqa: BLE001
                 log.error("failed %s: %s", qid, traceback.format_exc())
-                await thread.send(f"⚠️ 調べられませんでした: {str(ex)[:300]}")
+                await thread.send(f"⚠️ 調べられませんでした: {str(ex)[:300]}\n-# このスレッドに「やり直し」と書けば、もう一度調べます")
 
     async def handle(self, qid: str, text: str, thread) -> None:
         res = await asyncio.to_thread(qa_deep.answer, text, self.cfg, qid=qid)
