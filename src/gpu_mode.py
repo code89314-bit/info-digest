@@ -135,6 +135,65 @@ def to_llm() -> None:
     _run("llm-mode.ps1", 900)
 
 
+LOADING = "Strata がモデルを読み込んでいるところです"
+
+
+def llm_loading() -> bool:
+    """Strata が起動の途中（:8080 が 503「Loading model」を返す）。llm-mode.ps1 のあと8分ほどかかる（2026-11-26）。"""
+    try:
+        return requests.get("http://127.0.0.1:8080/health", timeout=5).status_code == 503
+    except requests.RequestException:
+        return False
+
+
+ANIMA_SESSION = Path(r"D:\Docker\AnimaWeb\comfy_session.json")
+
+
+def comfy_owner() -> str:
+    """だれが GPU を ComfyUI にしたか（目印から推定）。ANIMA Helper（D:\\Docker\\AnimaWeb、:8190）は
+    「ComfyUI 起動」で comfy_session.json、H3 の生成で llm_busy.h3auto.lock、開始画像の相談で llm_busy.imgprompt.lock を置き、
+    comfy-mode.flag を立てる（luna-mode.flag は外す）。Bot のお絵描きは luna-mode.flag を立てる。"""
+    names = {p.name for p in busy_locks()}
+    if held_by_bot():
+        return "ルナのお絵描き"
+    if "llm_busy.h3auto.lock" in names:
+        return "ANIMA Helper が H3 の生成のために切り替えた状態"
+    if "llm_busy.imgprompt.lock" in names:
+        return "ANIMA Helper が開始画像の相談のために切り替えた状態"
+    since = ""
+    if COMFY_FLAG.exists():
+        try:
+            since = f"・{dt.datetime.fromtimestamp(COMFY_FLAG.stat().st_mtime):%H:%M} から"
+        except OSError:
+            pass
+    try:
+        import json
+        if json.loads(ANIMA_SESSION.read_text(encoding="utf-8")).get("active"):
+            return f"ANIMA Helper の「ComfyUI 起動」で切り替えた状態{since}"
+    except (OSError, ValueError):
+        pass
+    if _up("http://127.0.0.1:8190/"):
+        return f"ANIMA Helper が切り替えた状態{since}"
+    return f"手で ComfyUI に切り替えた状態{since}"
+
+
+def llm_down_reason() -> str:
+    """Strata（:8080）が答えないときの理由（答えるなら ""）。ギモン深堀りが起動するか本人に聞くため（2026-11-26 本人）。"""
+    if _up("http://127.0.0.1:8080/health"):
+        return ""
+    if llm_loading():
+        return LOADING
+    if _up("http://127.0.0.1:8188/system_stats"):
+        busy, _ = comfy_activity()
+        why = "ComfyUI が起動していて、いま生成中です" if busy else "ComfyUI が起動していますが、生成はしていません"
+        return why + f"（{comfy_owner()}）"
+    if _up("http://127.0.0.1:8090/health"):
+        return "ルナのモデル（Gemma）が起動しています"
+    if busy_locks():
+        return "Strata が止まっています（定時の配信が起動し直しているところかもしれません）"
+    return "Strata が止まっています（ComfyUI・Gemma も動いていません）"
+
+
 def held_by_bot() -> bool:
     """いま GPU を Bot（ルナ）が借りているか。手で comfy-mode にしたときは False（触らない）。"""
     return LUNA_FLAG.exists()

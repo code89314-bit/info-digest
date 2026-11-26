@@ -27,6 +27,7 @@
 - **定時の配信**（Windows のタスク「info-digest …」）: 学習 4:00（NotebookLM の作業だけ先に。Discord への投稿は 5:50、`learn.post_at`）、AI ダイジェスト 5:30/5:35、がん薬物療法ニュース 6:00、朝のニュース＋横浜線沿線の欄（`src/local_events.py`）は 3:00 に作り置き（`-Phase prepare`、投稿しない）→ 6:40 に株式の欄（`src/market.py`、米国株の終値がそろってから）を足して投稿（`-Phase post`。作り置きが無ければいつもどおり作る）、週の連載の台本（14:00、`scripts/run_series.ps1`）、note 下書き（水 8:00・土 7:00）、ギモン深堀りの音声は 8:00 から（`qa_bot.audio_reserve`）、note 毎日の記事（6:00 の回のあとに自動で公開、`src/note_daily.py`。2026-11-13 に本人が自動公開を決定。土曜は週刊号に任せて作らない）など。
 - **Discord Bot**（タスク「info-digest qa bot」、`scripts/run_qa_bot.ps1` のループで落ちても60秒で再起動）: `src/qa_bot.py`
   - ギモン深堀り（`src/qa_deep.py`）: 疑問 → NotebookLM で一次資料を調べて note の下書き。
+    Strata が止まっていたら、理由（`gpu_mode.llm_down_reason`。例「ComfyUI が起動していますが、生成はしていません」）を出して、起動するか「はい／いいえ」で聞く（2026-11-26 本人）。
   - しらべ（トーク、`src/strata_chat.py`、`style/personas/shirabe.yaml`）: 雑談は Qwen3.6。調べものは NotebookLM（下記）。
   - ルナ（専用チャンネル）: 会話・小説は Gemma、絵は ComfyUI。
   - Bot のコードを変えたら、`qa_bot.py` の python を止めれば60秒後に新しいコードで立ち上がる。

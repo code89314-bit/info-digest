@@ -132,6 +132,7 @@ class QABot(discord.Client):
         self.luna_channel_id = luna_channel_id   # ここへの書き込みは LunaBot が受ける（この Bot は無視する）
         self.luna_bot: discord.Client | None = None   # main() が LunaBot を入れる（執筆モードの終了の通知・名前の変更用）
         self.pending: dict[int, dict] = {}       # チャンネル → モードを変える前の確認の答え待ち（ask_switch）
+        self.qa_wait: dict[int, str] = {}        # ギモン深堀りのスレッド → 質問（Strata を起動するかの答え待ち）
         self.chat_lock = asyncio.Lock()          # 会話は1件ずつ（Strata は同時に1件しか処理しない）
         self.last_chat = time.monotonic()        # 最後に話した時刻（GPU を借りたまましばらく無ければ Strata に戻す）
         self.comfy_at = time.time()              # お絵描きモードで ComfyUI が最後に動いていた時刻（idle_loop が1分ごとに見る）
@@ -160,16 +161,88 @@ class QABot(discord.Client):
         if self.chat_channel_id and msg.channel.id == self.chat_channel_id:
             self.loop.create_task(self.chat(msg))
             return
+        if msg.channel.id in self.qa_wait:   # 「Strata を起動しますか？」への返事（ギモン深堀りのスレッド）
+            await self.answer_qa_wait(msg)
+            return
         if msg.channel.id != self.channel_id:
             return
         text = msg.content.strip()
         if len(text) < 5:
             return
         thread = await msg.create_thread(name=f"🔎 {text[:90]}", auto_archive_duration=1440)
+        if await self.ask_start_llm(text, thread):
+            return
         pos = self.queue.qsize()
         await thread.send("受け付けました。患者情報の確認 → 解釈 → 資料集め → まとめ → note 下書きの順に進めます"
                           + (f"（前に {pos} 件あります）" if pos else "") + "。20〜30分ほどかかります。")
         await self.queue.put((text, thread))
+
+    async def ask_start_llm(self, text: str, thread) -> bool:
+        """Strata が止まっていたら、理由を出して起動するか聞く（2026-11-26 本人）。聞いたら True（答えは answer_qa_wait）。
+        ルナに貸しているとき（執筆・お絵描き）は、これまでどおり聞かずに Strata に戻す（worker）。"""
+        writing = strata_chat.writing_state("luna").get("active")
+        drawing = strata_chat.draw_session("luna").get("active")
+        if gpu_mode.held_by_bot() or writing or drawing:
+            return False
+        why = await asyncio.to_thread(gpu_mode.llm_down_reason)
+        if not why:
+            return False
+        if why == gpu_mode.LOADING:   # 起動の途中なら聞かずに、動き出すのを待ってから調べる
+            self.loop.create_task(self.wait_llm_then_queue(text, thread))
+            return True
+        self.qa_wait[thread.id] = text
+        stop = "" if why.startswith("Strata が止まって") else "\n-# 起動すると ComfyUI・Gemma は止まります"
+        await thread.send(f"⚠️ Strata が起動していません: {why}\nStrata を起動して調べますか？（はい／いいえ）{stop}")
+        return True
+
+    async def wait_llm(self, minutes: int = 15) -> bool:
+        """Strata が答えるまで待つ（モデルの読み込みに8分ほどかかる。2026-11-26）。"""
+        for _ in range(minutes * 4):
+            if not await asyncio.to_thread(gpu_mode.llm_down_reason):
+                return True
+            if not await asyncio.to_thread(gpu_mode.llm_loading):
+                await asyncio.sleep(15)   # 起動スクリプトの直後は 503 になる前のことがある
+                if not await asyncio.to_thread(gpu_mode.llm_loading) and await asyncio.to_thread(gpu_mode.llm_down_reason):
+                    return False
+            await asyncio.sleep(15)
+        return False
+
+    async def wait_llm_then_queue(self, text: str, thread) -> None:
+        note = await thread.send("-# ⏳ Strata がモデルを読み込んでいるところです（8分ほど）。動き出したら調べ始めます…")
+        ok = await self.wait_llm()
+        await note.delete()
+        if not ok:
+            why = await asyncio.to_thread(gpu_mode.llm_down_reason)
+            self.qa_wait[thread.id] = text
+            await thread.send(f"⚠️ Strata が動き出しませんでした: {why}\nStrata を起動して調べますか？（はい／いいえ）")
+            return
+        await thread.send("Strata が動き出しました。調べ始めます（20〜30分ほど）。")
+        await self.queue.put((text, thread))
+
+    async def answer_qa_wait(self, msg: discord.Message) -> None:
+        text = msg.content.strip()
+        if NO_RE.match(text):
+            self.qa_wait.pop(msg.channel.id, None)
+            await msg.channel.send("了解しました。今回は調べません（Strata が動いているときに、もう一度書いてください）。")
+            return
+        if not YES_RE.match(text):
+            await msg.channel.send("-# Strata を起動して調べるなら「はい」、やめるなら「いいえ」と書いてください。")
+            return
+        question = self.qa_wait.pop(msg.channel.id)
+        note = await msg.channel.send("-# ⏳ Strata を起動しています（モデルの読み込みまで10分ほど）…")
+        try:
+            await asyncio.to_thread(gpu_mode._run, "llm-mode.ps1", 900)
+            if not await self.wait_llm():
+                raise RuntimeError(await asyncio.to_thread(gpu_mode.llm_down_reason))
+        except Exception as ex:   # noqa: BLE001
+            log.error("start llm: %s", traceback.format_exc())
+            await msg.channel.send(f"⚠️ Strata を起動できませんでした: {str(ex)[:300]}")
+            return
+        finally:
+            await note.delete()
+        pos = self.queue.qsize()
+        await msg.channel.send("Strata が起動しました。調べ始めます（20〜30分ほど）" + (f"（前に {pos} 件あります）" if pos else "") + "。")
+        await self.queue.put((question, msg.channel))
 
     async def yomi_errata(self, msg: discord.Message, yomi: tuple[str, str, str]) -> None:
         """記事・音声の投稿への返信「表記:音声の読み|正しい読み」→ 辞書と記事に足す（src/yomi_errata.py。2026-11-26 本人）。"""
