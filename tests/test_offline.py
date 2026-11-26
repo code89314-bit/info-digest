@@ -1424,6 +1424,30 @@ assert "制吐剤：音声では「せいはつざい」" in series_note.yomi_ht
 assert yomi_errata.find_target("📰 公開\nhttps://note.com/code89314/n/n4985751b4455", dt.datetime.now())[1] == "n4985751b4455"
 print("✅ yomi errata")
 
+# ---------- Strata が止まっている理由（gpu_mode.llm_down_reason） ----------
+import gpu_mode  # noqa: E402
+_up0, _act0, _bot0 = gpu_mode._up, gpu_mode.comfy_activity, gpu_mode.held_by_bot
+gpu_mode.held_by_bot = lambda: False
+_ld0 = gpu_mode.llm_loading
+gpu_mode.llm_loading = lambda: False
+_own0 = gpu_mode.comfy_owner
+gpu_mode.comfy_owner = lambda: "手で"
+gpu_mode.comfy_activity = lambda: (False, "")
+gpu_mode._up = lambda url, headers=None: ":8080" in url
+assert gpu_mode.llm_down_reason() == ""
+gpu_mode._up = lambda url, headers=None: ":8188" in url
+assert gpu_mode.llm_down_reason().startswith("ComfyUI が起動していますが、生成はしていません")
+gpu_mode.comfy_activity = lambda: (True, "x")
+assert "生成中" in gpu_mode.llm_down_reason()
+gpu_mode._up = lambda url, headers=None: False
+gpu_mode.llm_loading = lambda: True
+assert gpu_mode.llm_down_reason() == gpu_mode.LOADING
+gpu_mode.llm_loading = lambda: False
+assert gpu_mode.llm_down_reason().startswith("Strata が止まっています")
+gpu_mode.llm_loading = _ld0
+gpu_mode._up, gpu_mode.comfy_activity, gpu_mode.held_by_bot, gpu_mode.comfy_owner = _up0, _act0, _bot0, _own0
+print("✅ llm down reason")
+
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)
 assert all(len(c) <= 1900 for c in chunks) and "".join(chunks) == "あ" * 50 + "\n" + "い" * 4500
