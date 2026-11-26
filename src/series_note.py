@@ -135,10 +135,33 @@ def audio_meta(path: Path, title: str, heading: str) -> dict:
             "title": title[:100], "author": AUTHOR}
 
 
+YOMI_LINE = re.compile(r"^(.+?)\s*[:：]\s*(.+?)\s*(?:→|->|[|｜])\s*(.+)$")
+
+
+def yomi_html(d: Path, n: int) -> str:
+    """音声の読み間違い（2026-11-26 本人。毎日のニュースと同じ「【今日の読み間違え】」の形）。
+    本人が聴いて ep<n>-yomi.txt に1行ずつ「表記：音声の読み → 正しい読み」と書く（# で始まる行は無視）。無ければ何も出さない。"""
+    f = d / f"ep{n}-yomi.txt"
+    if not f.exists():
+        return ""
+    rows = []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = YOMI_LINE.match(line)
+        rows.append(f"{m.group(1)}：音声では「{m.group(2)}」→ 正しくは「{m.group(3)}」" if m else line)
+    if not rows:
+        return ""
+    return "<p>" + "<br>".join(html.escape(x) for x in ["【今日の読み間違え】", *rows]) + "</p>"
+
+
 def episode(d: Path, n: int) -> dict:
     title = title_of(d, n)
     a = audio_of(d, n)
     b = [notice_html(), "<h2>音声で聞く（AI 音声・約20分）</h2>"]
+    if a and (y := yomi_html(d, n)):
+        b.append(y)
     b.append(f"<p>{html.escape(AUDIO_NOTE.format(a.name))}</p>" if a else "<p>この回の音声は後日追加します。</p>")
     b += [f"<p>{html.escape(TOC_NOTE)}</p>", md_to_html((d / f"ep{n}-article.md").read_text(encoding="utf-8")), footer_html()]
     return {"title": title, "body_html": "\n".join(b),

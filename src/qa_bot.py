@@ -35,6 +35,7 @@ import comfy_client
 import gpu_mode
 import qa_deep
 import strata_chat
+import yomi_errata
 from common import load_state, save_state
 
 STATE = "qa_bot"
@@ -153,6 +154,9 @@ class QABot(discord.Client):
     async def on_message(self, msg: discord.Message) -> None:
         if msg.author.bot or msg.author.id not in self.owners or msg.channel.id == self.luna_channel_id:
             return
+        if msg.reference and (yomi := yomi_errata.parse(msg.content)):   # 読み間違いの返信（どのチャンネルでも）
+            self.loop.create_task(self.yomi_errata(msg, yomi))
+            return
         if self.chat_channel_id and msg.channel.id == self.chat_channel_id:
             self.loop.create_task(self.chat(msg))
             return
@@ -166,6 +170,20 @@ class QABot(discord.Client):
         await thread.send("受け付けました。患者情報の確認 → 解釈 → 資料集め → まとめ → note 下書きの順に進めます"
                           + (f"（前に {pos} 件あります）" if pos else "") + "。20〜30分ほどかかります。")
         await self.queue.put((text, thread))
+
+    async def yomi_errata(self, msg: discord.Message, yomi: tuple[str, str, str]) -> None:
+        """記事・音声の投稿への返信「表記:音声の読み|正しい読み」→ 辞書と記事に足す（src/yomi_errata.py。2026-11-26 本人）。"""
+        try:
+            ref = msg.reference.resolved
+            if not isinstance(ref, discord.Message):
+                ref = await msg.channel.fetch_message(msg.reference.message_id)
+            text = "\n".join([ref.content] + [f"{e.title or ''} {e.description or ''} {e.url or ''}" for e in ref.embeds])
+            await msg.add_reaction("👀")
+            report = await asyncio.to_thread(yomi_errata.apply, text, ref.created_at, *yomi)
+        except Exception as ex:   # noqa: BLE001
+            log.exception("yomi errata")
+            report = f"読み間違いを足せませんでした（{str(ex)[:200]}）"
+        await msg.reply(f"📝 読み間違い「{yomi_errata.errata_line(*yomi)}」\n{report}", mention_author=False)
 
     # ---- 会話（ペルソナ・検索つき） ----
     async def chat(self, msg: discord.Message, persona_id: str | None = None) -> None:

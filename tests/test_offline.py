@@ -1399,7 +1399,30 @@ import series_note  # noqa: E402
 h = series_note.md_to_html("# 題\n## 年表\n| 年月 | 出来事 |\n|---|---|\n| 2002年7月 | **承認** |\n\n- 箇条\n本文 [出典](https://example.org)")
 assert "<h2>年表</h2>" in h and "<li><strong>2002年7月</strong>：<strong>承認</strong></li>" in h and "題" not in h
 assert "年月" not in h and '<a href="https://example.org">出典</a>' in h and "<li>箇条</li>" in h
+_yd = TMP / "yomi"
+_yd.mkdir(parents=True, exist_ok=True)
+assert series_note.yomi_html(_yd, 1) == ""
+(_yd / "ep1-yomi.txt").write_text("# メモ\nHER2：ヘアツー → ハーツー\n自由な一行\n", encoding="utf-8")
+assert series_note.yomi_html(_yd, 1) == "<p>【今日の読み間違え】<br>HER2：音声では「ヘアツー」→ 正しくは「ハーツー」<br>自由な一行</p>"
 print("✅ series note")
+
+# ---------- 読み間違いの返信（src/yomi_errata.py） ----------
+import yomi_errata  # noqa: E402
+assert yomi_errata.parse("HER2:ヘルツー|ハーツー") == ("HER2", "ヘルツー", "ハーツー")
+assert yomi_errata.parse("HER2：ヘルツー｜ハーツー") == ("HER2", "ヘルツー", "ハーツー")
+assert yomi_errata.parse("ありがとう") is None and yomi_errata.parse("a:b|c\nd") is None
+assert yomi_errata.errata_line("HER2", "ヘルツー", "ハーツー") == "HER2：音声では「ヘルツー」→ 正しくは「ハーツー」"
+_yf = TMP / "yomi.yaml"
+_yf.write_text("HER2: ハーツー\n", encoding="utf-8")
+assert "もう" in yomi_errata.add_dict("HER2", "ヘルツー", "ハーツー", _yf)
+assert "足しました" in yomi_errata.add_dict("irAE", "イラエ", "アイアールエーイー", _yf, dt.date(2026, 11, 26))
+import yaml as _yaml  # noqa: E402
+assert _yaml.safe_load(_yf.read_text(encoding="utf-8")) == {"HER2": "ハーツー", "irAE": "アイアールエーイー"}
+assert "足しました" in yomi_errata.add_series(_yd, 2, "制吐剤", "せいはつざい", "せいとざい")
+assert "もう" in yomi_errata.add_series(_yd, 2, "制吐剤", "せいはつざい", "せいとざい")
+assert "制吐剤：音声では「せいはつざい」" in series_note.yomi_html(_yd, 2)
+assert yomi_errata.find_target("📰 公開\nhttps://note.com/code89314/n/n4985751b4455", dt.datetime.now())[1] == "n4985751b4455"
+print("✅ yomi errata")
 
 # Discordの分割ロジック
 chunks = common._split_text("あ" * 50 + "\n" + "い" * 4500, 1900)

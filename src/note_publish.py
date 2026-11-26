@@ -365,6 +365,81 @@ def publish_with_magazine(edit_url: str, magazine: str, tags: list[str] | None =
             ctx.close()
 
 
+YOMI_HEAD = "【今日の読み間違え】"
+CARET_END = """e => { e.focus && e.focus(); const r = document.createRange(); r.selectNodeContents(e); r.collapse(false);
+                   const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); }"""
+
+
+def _yomi_spot(page):
+    """読み間違いの欄を書く場所:（要素, 欄の見出しも書くか, 新しい段落を作るか）。
+    欄があればその段落の終わり。無ければ「音声」の大見出しの次の段落（毎日のニュースのおことわり）の終わり、
+    見出しのすぐ後ろが音声なら見出しの終わりに新しい段落。"""
+    head = page.locator(".ProseMirror p", has_text=YOMI_HEAD).first
+    if head.count():
+        return head, False, False
+    h2 = page.locator(".ProseMirror h2", has_text="音声").first
+    if not h2.count():
+        raise RuntimeError("「音声」の見出しが本文に見つかりません")
+    nxt = h2.locator("xpath=following-sibling::*[1]")
+    if nxt.count() and nxt.evaluate("e => e.tagName") == "P" and nxt.inner_text().strip():
+        return nxt, True, False
+    return h2, True, True
+
+
+def add_yomi_errata(edit_url: str, line: str, word: str, dry_run: bool = False) -> str:
+    """記事の「【今日の読み間違え】」の欄に line を1行足す（欄が無ければ作る。2026-11-26 本人）。
+    公開済みの記事は「公開に進む」→「更新する」、下書きは「下書き保存」。
+    戻り値: "updated" / "saved" / "already"（word がもう欄にある）/ dry_run なら "dry-run: …"（何も押さない・書かない）。"""
+    import requests
+    from playwright.sync_api import sync_playwright
+    key = re.search(r"/notes/(n[0-9a-z]+)", edit_url).group(1)
+    status = ((requests.get(f"https://note.com/api/v3/notes/{key}", timeout=30).json().get("data") or {})
+              .get("status"))
+    with _profile_lock(), sync_playwright() as p:
+        ctx = _context(p, False)   # 公開の画面は headless では移らない
+        page = ctx.new_page()
+        try:
+            page.goto(edit_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(8000)
+            if "/login" in page.url:
+                raise NeedLogin("note のログインが切れています（このPCで `python src/note_publish.py --login`）")
+            page.locator('.ProseMirror[contenteditable="true"]').first.wait_for(timeout=60000)
+            page.keyboard.press("Escape")
+            el, with_head, new_para = _yomi_spot(page)
+            if not with_head and re.search(rf"(^|\n){re.escape(word)}\s*[:：]", el.inner_text()):
+                return "already"
+            if dry_run:
+                return (f"dry-run: 状態={status}・書く場所={el.evaluate('e => e.tagName')}「{el.inner_text()[:30]}」"
+                        f"・見出しも={with_head}・新しい段落={new_para}")
+            el = el.element_handle()
+            el.scroll_into_view_if_needed()
+            el.click()
+            el.evaluate(CARET_END)
+            page.wait_for_timeout(300)
+            texts = ([YOMI_HEAD] if with_head else []) + [line]
+            for i, t in enumerate(texts):
+                page.keyboard.press("Enter" if new_para and i == 0 else "Shift+Enter")
+                page.wait_for_timeout(300)
+                page.keyboard.insert_text(t)
+                page.wait_for_timeout(300)
+            page.wait_for_timeout(1000)
+            if not page.locator(".ProseMirror", has_text=line).count():
+                raise RuntimeError("本文に書けませんでした")
+            _shot(page, "yomi-errata")
+            if status == "published":
+                _open_publish(page)
+                _press_post(page)
+                return "updated"
+            _press_save(page)
+            return "saved"
+        except NeedLogin:
+            raise
+        except Exception as ex:
+            raise RuntimeError(f"{ex}（画面: {_shot(page, 'yomi-errata-error')}）") from ex
+        finally:
+            ctx.close()
+
+
 def published_url(edit_url: str) -> str:
     """編集画面のURL（editor.note.com/notes/<記事のキー>/…）から、公開した記事のURLを note に聞く。
     聞けなければ編集画面のURLのまま。"""
