@@ -7,6 +7,8 @@
      - note の URL がある投稿（毎日のニュースの「note に公開しました」など）→ その記事を note の編集画面で直して「更新する」
      - 週の連載の音声の投稿（「🎧 週の連載 第n回 …」）→ 週のフォルダの ep<n>-yomi.txt に足す（series_note.py が記事に入れる）
      - どちらでもない（朝のニュースの音声の投稿など）→ 投稿した日の「がん薬物療法ニュース」の note 記事
+勘違いだったときは「取り消し:表記」（例: 取り消し:IMiDs。返信でなくてもよい）→ undo() が辞書から消す
+（連載の音声の投稿への返信なら ep<n>-yomi.txt からも。note の記事の行は手で消す）。2026-11-27 本人
 """
 import datetime as dt
 import json
@@ -50,6 +52,59 @@ def add_dict(word: str, wrong: str, right: str, path: Path = YOMI_FILE, today: d
     add = f"# 「{wrong}」と読んだ（{day} 本人・Discord から）\n{key}: {right}\n"
     path.write_text(text + ("" if not text or text.endswith("\n") else "\n") + add, encoding="utf-8")
     return f"辞書に「{word}: {right}」を足しました（次の音声から）"
+
+
+UNDO = re.compile(r"^\s*(?:取り消し|取消し?|削除)\s*[:：]\s*(.+?)\s*$")
+AUTO_NOTE = re.compile(r"^# 「.*」と読んだ（.*Discord から）$")
+
+
+def parse_undo(text: str) -> str | None:
+    """「取り消し:表記」（取消・削除も可）→ 表記。勘違いで足した読みを消す（2026-11-27 本人）。"""
+    if "\n" in text.strip():
+        return None
+    m = UNDO.match(text)
+    return m.group(1) if m else None
+
+
+def _key_line(word: str) -> re.Pattern:
+    return re.compile(rf"^(?:{re.escape(word)}|{re.escape(json.dumps(word, ensure_ascii=False))})\s*:")
+
+
+def remove_dict(word: str, path: Path = YOMI_FILE) -> str:
+    """読みの辞書から「表記: …」の行を消す（Discord から足したときの「# 「…」と読んだ」の行も一緒に）。"""
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+    key = _key_line(word)
+    hit = [i for i, s in enumerate(lines) if key.match(s)]
+    if not hit:
+        return f"辞書に「{word}」はありません"
+    drop = set(hit) | {i - 1 for i in hit if i > 0 and AUTO_NOTE.match(lines[i - 1].rstrip("\n"))}
+    gone = "".join(lines[i] for i in hit).strip()
+    path.write_text("".join(s for i, s in enumerate(lines) if i not in drop), encoding="utf-8")
+    return f"辞書から「{gone}」を消しました"
+
+
+def remove_series(d: Path, n: int, word: str) -> str:
+    f = d / f"ep{n}-yomi.txt"
+    old = f.read_text(encoding="utf-8").splitlines(keepends=True) if f.exists() else []
+    pat = re.compile(rf"^{re.escape(word)}\s*[:：]")
+    new = [s for s in old if not pat.match(s)]
+    if len(new) == len(old):
+        return f"{d.name} 第{n}回の ep{n}-yomi.txt に「{word}」はありません"
+    f.write_text("".join(new), encoding="utf-8")
+    return f"{d.name} 第{n}回の ep{n}-yomi.txt から消しました"
+
+
+def undo(ref_text: str, word: str) -> str:
+    """Bot から呼ぶ。辞書から消し、連載の音声の投稿への返信なら ep<n>-yomi.txt からも消す。
+    note の記事の行は消さない（手で消す。公開中の記事を自動で削るのは避ける）。"""
+    out = [remove_dict(word)]
+    if ref_text and (m := SERIES_POST.search(ref_text)):
+        n = int(m.group(1))
+        if d := series_target(n, m.group(2)):
+            out.append(remove_series(d, n, word))
+    elif ref_text and (m := NOTE_KEY.search(ref_text)):
+        out.append(f"note の記事（{m.group(1)}）の「【今日の読み間違え】」の行は、手で消してください")
+    return "\n".join(out)
 
 
 def series_target(n: int, title: str) -> Path | None:

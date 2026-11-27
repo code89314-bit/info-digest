@@ -550,7 +550,8 @@ onco:
     ledger: 'E:\onco_tekisei\audio_usage.json'
     # 2026-11-19 に 3 → 5（本人の判断）。Google の上限は約5時間で戻るので、時間をずらせば1日に3本より多く作れる。
     #   断られたときは qa_bot.rate_limit_* の決まりでやり直す
-    daily_limit: 5
+    #   2026-11-27 に 5 → 6（本人が NotebookLM をアップグレード）
+    daily_limit: 6
     # 枠が残っていても Google が「作りすぎ」と断ることがある。そのときは何分待ってやり直すか（空なら諦める）
     rate_limit_wait_minutes: [30, 60]
 
@@ -660,7 +661,7 @@ learn:
     cli_path_add: '%APPDATA%\Python\Python310\Scripts'
     auth_refresh: ['C:\Program Files\Python310\python.exe', 'E:\onco_tekisei\nlm_auth.py', refresh]
     ledger: 'E:\onco_tekisei\audio_usage.json'
-    daily_limit: 5                      # 上の onco.podcast と同じにする（台帳は共通）
+    daily_limit: 6                      # 上の onco.podcast と同じにする（台帳は共通）
     rate_limit_wait_minutes: [30, 60]   # 上の onco.podcast と同じ（断られたら待ってやり直す）
 
 # ==== 週の連載（公開学習アーカイブ。全6回・各回約20分）。設計は docs/SERIES_PLAN.md ====
@@ -676,7 +677,7 @@ series:
   # できた・止まったの知らせを送る Discord（.env の名前）
   webhook_env: DISCORD_WEBHOOK_NOTE
   # 台本ができたら続けて NotebookLM の音声も作る（2026-11-23 本人が決定。src/series_audio.py、20〜30分）。
-  # 音声の枠（1日5本、学習・ニュース・ギモン深堀りと共通）を1本使う。false にすると台本だけ
+  # 音声の枠（1日6本、学習・ニュース・ギモン深堀りと共通）を1本使う。false にすると台本だけ
   audio: true
   # できた音声を 10MB 以下に縮めて、上の webhook_env の Discord にも貼る（2026-11-25 本人。note の下書きの音声は
   # 公開するまで聴けないため）。false にすると貼らない
@@ -849,7 +850,7 @@ qa_bot:
   max_extra_sources: 10
   cover_image: true
   out_dir: .local/qa
-  # NotebookLM の音声は1日5本まで（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
+  # NotebookLM の音声は1日6本まで（onco.podcast.daily_limit。台帳は共通）。ほかの番組のために、その時刻までは空けておく枠
   audio_reserve:
     - {until: "08:00", n: 2}               # 学習 4:00・ニュース 6:00（ギモン深堀りの音声は 8:00 から）
     - {weekday: 2, until: "10:30", n: 1}   # 水曜号 8:00（weekday: 0=月 … 6=日。2026-11-19 に 7:00 から移動）

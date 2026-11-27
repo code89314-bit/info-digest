@@ -163,6 +163,9 @@ class QABot(discord.Client):
         if msg.reference and (yomi := yomi_errata.parse(msg.content)):   # 読み間違いの返信（どのチャンネルでも）
             self.loop.create_task(self.yomi_errata(msg, yomi))
             return
+        if word := yomi_errata.parse_undo(msg.content):   # 「取り消し:表記」（勘違いで足した読みを消す）
+            self.loop.create_task(self.yomi_undo(msg, word))
+            return
         if self.chat_channel_id and msg.channel.id == self.chat_channel_id:
             self.loop.create_task(self.chat(msg))
             return
@@ -292,6 +295,21 @@ class QABot(discord.Client):
             log.exception("yomi errata")
             report = f"読み間違いを足せませんでした（{str(ex)[:200]}）"
         await msg.reply(f"📝 読み間違い「{yomi_errata.errata_line(*yomi)}」\n{report}", mention_author=False)
+
+    async def yomi_undo(self, msg: discord.Message, word: str) -> None:
+        """「取り消し:表記」→ 読みの辞書（と連載の ep<n>-yomi.txt）から消す（2026-11-27 本人）。"""
+        try:
+            text = ""
+            if msg.reference:
+                ref = msg.reference.resolved
+                if not isinstance(ref, discord.Message):
+                    ref = await msg.channel.fetch_message(msg.reference.message_id)
+                text = "\n".join([ref.content] + [f"{e.title or ''} {e.description or ''} {e.url or ''}" for e in ref.embeds])
+            report = await asyncio.to_thread(yomi_errata.undo, text, word)
+        except Exception as ex:   # noqa: BLE001
+            log.exception("yomi undo")
+            report = f"消せませんでした（{str(ex)[:200]}）"
+        await msg.reply(f"🗑️ 読み「{word}」の取り消し\n{report}", mention_author=False)
 
     # ---- 会話（ペルソナ・検索つき） ----
     async def chat(self, msg: discord.Message, persona_id: str | None = None) -> None:
