@@ -193,12 +193,14 @@ def main() -> None:
     ap.add_argument("week_dir")
     ap.add_argument("--eps", default="")
     ap.add_argument("--summary", action="store_true", help="「まとめて聴く」も作る")
+    ap.add_argument("--summary-eps", default="", help="「まとめて聴く」に並べる回（無ければ --eps と同じ。例: 1,2,3,4,5,6,7）")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     d = Path(a.week_dir)
-    eps = [int(x) for x in a.eps.split(",") if x] or sorted(
-        int(m.group(1)) for p in d.glob("ep*-article.md") if (m := re.match(r"ep(\d+)-article", p.name)))
-    docs = [(f"ep{n}", episode(d, n)) for n in eps] + ([("summary", summary(d, eps))] if a.summary else [])
+    every = sorted(int(m.group(1)) for p in d.glob("ep*-article.md") if (m := re.match(r"ep(\d+)-article", p.name)))
+    eps = [int(x) for x in a.eps.split(",") if x] or ([] if a.summary_eps else every)
+    s_eps = [int(x) for x in a.summary_eps.split(",") if x] or eps or every
+    docs = [(f"ep{n}", episode(d, n)) for n in eps] + ([("summary", summary(d, s_eps))] if a.summary else [])
     out = d / "note"
     out.mkdir(exist_ok=True)
     for key, doc in docs:

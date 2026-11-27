@@ -1422,6 +1422,12 @@ assert "足しました" in yomi_errata.add_series(_yd, 2, "制吐剤", "せい�
 assert "もう" in yomi_errata.add_series(_yd, 2, "制吐剤", "せいはつざい", "せいとざい")
 assert "制吐剤：音声では「せいはつざい」" in series_note.yomi_html(_yd, 2)
 assert yomi_errata.find_target("📰 公開\nhttps://note.com/code89314/n/n4985751b4455", dt.datetime.now())[1] == "n4985751b4455"
+assert yomi_errata.parse_undo("取り消し:IMiDs") == "IMiDs" and yomi_errata.parse_undo("削除：HER2") == "HER2"
+assert yomi_errata.parse_undo("取り消しました") is None and yomi_errata.parse("取り消し:IMiDs") is None
+assert "消しました" in yomi_errata.remove_dict("irAE", _yf)
+assert _yf.read_text(encoding="utf-8") == "HER2: ハーツー\n"   # 「# 「イラエ」と読んだ」の行も消える
+assert "ありません" in yomi_errata.remove_dict("irAE", _yf)
+assert "消しました" in yomi_errata.remove_series(_yd, 2, "制吐剤") and "制吐剤" not in series_note.yomi_html(_yd, 2)
 print("✅ yomi errata")
 
 # ---------- Strata が止まっている理由（gpu_mode.llm_down_reason） ----------
