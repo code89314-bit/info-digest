@@ -40,7 +40,7 @@ def readings_note(path: Path = YOMI_FILE, only_in: str | None = None) -> str:
     return ("\n（制作メモ。番組の中では触れないこと）次の言葉はこの読み方で発音する: " + "、".join(pairs) +
             "。読み方についての説明や補足は、音声の中で一切しない。") if pairs else ""
 
-from common import ROOT, post_discord, post_discord_file
+from common import ROOT, load_state, post_discord, post_discord_file, save_state
 
 SOURCE_WAIT = 600        # 資料1件の取込待ち（秒）
 ARTIFACT_WAIT = 2400     # 音声の完成待ち（秒）。15〜20分かかることがある
@@ -331,6 +331,8 @@ class Notebook:
             raise PodcastError("mp3 をダウンロードできませんでした")
 
     def close(self) -> None:
+        if getattr(self, "keep", False):   # 音声待ちの列（STOCK）に入れたノートは、あとで作るまで残す
+            return
         if self.nb:
             _cli(self.pod, ["delete", "-n", self.nb, "-y"], parse_json=False, check=False)
             self.nb = None
@@ -370,6 +372,96 @@ def compress(src: Path, dst: Path, max_mb: float, ffmpeg: str) -> float:
     return secs
 
 
+def _out_paths(pod: dict) -> tuple[Path, Path]:
+    out_dir = ROOT / (pod.get("out_dir") or ".local/podcasts")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    prefix = pod.get("file_prefix", "podcast")
+    return out_dir / f"{prefix}-{stamp}.mp3", out_dir / f"{prefix}-{stamp}-discord.mp3"
+
+
+def _post_audio(pod: dict, raw: Path, small: Path, *, webhook: str, username: str, avatar_url: str | None,
+                day: dt.date | None = None, note: str = "") -> float:
+    ffmpeg = pod.get("ffmpeg") or shutil.which("ffmpeg") or "ffmpeg"
+    secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
+    post_discord_file(webhook, small, username=username, avatar_url=avatar_url,
+                      content=f"🎧 **{pod.get('label') or '今日のニュース podcast'}**"
+                              f"（{(day or dt.date.today()):%m/%d}・約{round(secs / 60)}分・NotebookLM）" + note)
+    print(f"podcast を投稿しました: {small.name}")
+    for old in sorted(raw.parent.glob("*.mp3"))[:-int(pod.get("keep_files", 20))]:   # 古いものは消す
+        old.unlink(missing_ok=True)
+    return secs
+
+
+# ---- 音声待ちの列（定時の番組の分。Google に断られたら、Bot の qa_bot.try_stock が1時間おきにやり直す） ----
+STOCK = "audio_stock"   # <state>/audio_stock.json の items
+
+
+def _retry_cfg() -> dict:
+    try:
+        from common import load_config
+        return load_config().get("qa_bot") or {}
+    except Exception:   # noqa: BLE001
+        return {}
+
+
+def stock_items() -> list[dict]:
+    return load_state(STOCK).get("items") or []
+
+
+def stock_add(notebook: Notebook, pod: dict, *, webhook: str, username: str, avatar_url: str | None,
+              now: dt.datetime | None = None) -> dict:
+    """断られた音声を列に入れる（ノートは残す）。入れた項目を返す。"""
+    now = (now or dt.datetime.now()).replace(microsecond=0)
+    cfg = _retry_cfg()
+    notebook.keep = True
+    item = {"id": f"{pod.get('file_prefix', 'podcast')}-{now:%Y%m%d-%H%M}", "nb": notebook.nb,
+            "pod": {**pod, "rate_limit_wait_minutes": []}, "webhook": webhook, "username": username,
+            "avatar_url": avatar_url, "day": now.date().isoformat(), "first_fail": now.isoformat(),
+            "retry_at": (now + dt.timedelta(minutes=int(cfg.get("rate_limit_retry_minutes", 60)))).isoformat(),
+            "give_up": (now + dt.timedelta(hours=float(cfg.get("rate_limit_give_up_hours", 6)))).isoformat()}
+    state = load_state(STOCK)
+    state["items"] = (state.get("items") or []) + [item]
+    save_state(STOCK, state)
+    return item
+
+
+def stock_update(item_id: str, **kw) -> None:
+    state = load_state(STOCK)
+    for it in state.get("items") or []:
+        if it["id"] == item_id:
+            it.update(kw)
+    save_state(STOCK, state)
+
+
+def stock_remove(item_id: str) -> None:
+    state = load_state(STOCK)
+    state["items"] = [it for it in state.get("items") or [] if it["id"] != item_id]
+    save_state(STOCK, state)
+
+
+def stock_make(item: dict) -> Path:
+    """列の音声を作って Discord に貼り、ノートを消す。断られたら PodcastError（RateLimit）のまま上げる（ノートは残す）。"""
+    pod = item["pod"]
+    nb = Notebook.attach(pod, item["nb"])
+    raw, small = _out_paths(pod)
+    nb.audio(raw)
+    nb.close()
+    _post_audio(pod, raw, small, webhook=item["webhook"], username=item["username"], avatar_url=item.get("avatar_url"),
+                day=dt.date.fromisoformat(item["day"]),
+                note=f"\n-# {item['first_fail'][11:16]} に NotebookLM に断られたので、{dt.datetime.now():%H:%M} に作り直しました")
+    return raw
+
+
+def stock_give_up(item: dict, why: str) -> None:
+    try:
+        Notebook.attach(item["pod"], item["nb"]).close()
+    except Exception:   # noqa: BLE001
+        pass
+    post_discord(item["webhook"], username=item["username"], avatar_url=item.get("avatar_url"),
+                 content=f"🎧 {item['day'][5:].replace('-', '/')} の podcast は作れませんでした: {why}")
+
+
 def run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook: Notebook | None = None,
         avatar_url: str | None = None, before_post=None) -> Path | None:
     """podcast を作って添付する。notebook を渡せば要約に使ったノートをそのまま使う（最後に削除）。
@@ -402,30 +494,35 @@ def _run(picked: list[dict], pod: dict, *, webhook: str, username: str, notebook
         post_discord(webhook, username=username, avatar_url=avatar_url,
                      content=f"🎧 今日の podcast は作りませんでした（NotebookLM の音声は1日{limit}本まで。上限に達しています）")
         return
-    out_dir = ROOT / (pod.get("out_dir") or ".local/podcasts")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
-    raw, small = out_dir / f"{pod.get('file_prefix', 'podcast')}-{stamp}.mp3", \
-        out_dir / f"{pod.get('file_prefix', 'podcast')}-{stamp}-discord.mp3"
-    ffmpeg = pod.get("ffmpeg") or shutil.which("ffmpeg") or "ffmpeg"
+    raw, small = _out_paths(pod)
+    # 断られたらその場では待たず、音声待ちの列（STOCK）に入れて Bot が1時間おきにやり直す（2026-11-28 本人）
+    stock = bool(pod.get("rate_limit_stock", True))
     try:
         print("podcast を作成中（NotebookLM、15〜20分かかることがあります）…")
-        if notebook is None:
+        own = notebook is None
+        if own:
             notebook = Notebook(pod, picked)
+        try:
+            if stock:
+                notebook.pod = {**notebook.pod, "rate_limit_wait_minutes": []}
             try:
                 notebook.audio(raw)
-            finally:
+            except PodcastError as ex:
+                if not (stock and "RateLimit" in str(ex)):
+                    raise
+                item = stock_add(notebook, pod, webhook=webhook, username=username, avatar_url=avatar_url)
+                ready()
+                post_discord(webhook, username=username, avatar_url=avatar_url,
+                             content=f"🎧 NotebookLM に音声の作成を断られました（Google 側の回数制限）。"
+                                     f"{item['retry_at'][11:16]} から1時間おきにやり直して、できたらここに貼ります"
+                                     f"（{item['give_up'][11:16]} まで）")
+                print(f"NotebookLM が音声の作成を断りました（RateLimit）。音声待ちの列に入れました: {item['id']}")
+                return None
+        finally:
+            if own:
                 notebook.close()
-        else:
-            notebook.audio(raw)
-        secs = compress(raw, small, float(pod.get("max_mb", 9.5)), ffmpeg)
         ready()
-        post_discord_file(webhook, small, username=username, avatar_url=avatar_url,
-                          content=f"🎧 **{pod.get('label') or '今日のニュース podcast'}**"
-                                  f"（{dt.date.today():%m/%d}・約{round(secs / 60)}分・NotebookLM）")
-        print(f"podcast を投稿しました: {small.name}")
-        for old in sorted(out_dir.glob("*.mp3"))[:-int(pod.get("keep_files", 20))]:   # 古いものは消す
-            old.unlink(missing_ok=True)
+        _post_audio(pod, raw, small, webhook=webhook, username=username, avatar_url=avatar_url)
         return raw
     except Exception as ex:   # noqa: BLE001  音声は「おまけ」。失敗理由だけ伝える
         print("podcast 失敗:", ex)

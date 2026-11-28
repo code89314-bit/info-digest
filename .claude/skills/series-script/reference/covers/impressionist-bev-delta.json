@@ -1,0 +1,61 @@
+{
+ "name": "e-delta",
+ "width": 1280,
+ "height": 672,
+ "seeds": [
+  62
+ ],
+ "caption": "An impressionist oil painting, loose visible broken brushstrokes, thick impasto dabs of pure color, soft atmospheric light, simple bold composition that stays readable when shrunk to a tiny phone thumbnail. (photo:-2) (3d:-2) (vector:-2) (anatomy:-2) An aerial view of a river delta at sunset painted impressionistically: many thin golden-red tributaries branch across dark green-violet land and all converge into one glowing round red-orange lagoon at center-right, like blood vessels feeding a tumor.",
+ "negative": "photo, photorealistic, 3d render, cgi, sharp vector lines, flat graphic, anime, cartoon, people, faces, medical illustration, anatomy diagram, microscope, syringe, misspelled text, garbled characters, extra text, watermark, frame, signature",
+ "boxes": [
+  {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 672,
+   "type": "obj",
+   "desc": "Dark green and violet land seen from above, broken brushstrokes.",
+   "palette": [
+    "#2F4A3E",
+    "#4B3F63",
+    "#6A7A55"
+   ]
+  },
+  {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 672,
+   "type": "obj",
+   "desc": "Thin branching golden-red rivers converging to the right.",
+   "palette": [
+    "#E0773A",
+    "#C93A2A"
+   ]
+  },
+  {
+   "x": 730,
+   "y": 200,
+   "w": 240,
+   "h": 240,
+   "type": "obj",
+   "desc": "Glowing round red-orange lagoon.",
+   "palette": [
+    "#E5502A",
+    "#F5A04A"
+   ]
+  },
+  {
+   "x": 60,
+   "y": 560,
+   "w": 420,
+   "h": 70,
+   "type": "text",
+   "text": "Bevacizumab",
+   "desc": "Small elegant painted serif title text in warm off-white, brushstroke texture.",
+   "palette": [
+    "#F4ECDD"
+   ]
+  }
+ ]
+}

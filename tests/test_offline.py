@@ -422,6 +422,27 @@ try:
     raise AssertionError("諦めるはず")
 except podcast_nlm.PodcastError as ex:
     assert "RateLimit" in str(ex) and len(GEN) == 2 and SLEPT == [1800]
+# 定時の番組（run）は、断られたらその場で待たずに音声待ちの列へ（Bot が1時間おきにやり直す。2026-11-28 本人）
+GEN.clear(); SLEPT.clear(); CALLS.clear()
+podcast_nlm.post_discord = lambda *a, **k: CALLS.append(k.get("content", ""))
+podcast_nlm._retry_cfg = lambda: {}
+nb = podcast_nlm.Notebook.__new__(podcast_nlm.Notebook)
+nb.pod, nb.nb = {"ledger": str(ledger), "rate_limit_wait_minutes": [30, 60]}, "nb2"
+_dry = os.environ.pop("DRY_RUN", None)
+assert podcast_nlm._run([], {"ledger": str(ledger), "daily_limit": 9, "file_prefix": "onco", "out_dir": str(TMP)},
+                        webhook="W", username="u", notebook=nb) is None
+if _dry is not None:
+    os.environ["DRY_RUN"] = _dry
+assert SLEPT == [] and nb.keep and len(CALLS) == 1 and "1時間おき" in CALLS[0], (SLEPT, CALLS)
+_it = podcast_nlm.stock_items()[-1]
+assert _it["nb"] == "nb2" and _it["pod"]["rate_limit_wait_minutes"] == [] and _it["webhook"] == "W"
+nb.close()
+assert nb.nb == "nb2"   # 列に入れたノートは消さない
+podcast_nlm.stock_update(_it["id"], retry_at="x")
+assert podcast_nlm.stock_items()[-1]["retry_at"] == "x"
+podcast_nlm.stock_remove(_it["id"])
+assert podcast_nlm.stock_items() == []
+podcast_nlm.post_discord = orig_post
 podcast_nlm._cli, podcast_nlm.time.sleep = orig_cli, orig_sleep
 print("✅ podcast parts")
 
@@ -1226,18 +1247,14 @@ assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 6
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 23, 9, 0), used=2) == 1
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 9, 0), used=2) == 0   # 水曜は水曜号の分
 assert qa_deep.audio_slots({"daily_limit": 3}, QCFG, dt.datetime(2026, 10, 28, 23, 30), used=2) == 1
-# Google に断られたら: 直近5時間でいちばん古い生成 ＋5時間＋10分。記録が無ければ60分後。22:00 を過ぎるなら諦める
+# Google に断られたら: 1時間おきにやり直し、最初に断られてから6時間で諦める（2026-11-28 本人）
 D = lambda h, m: dt.datetime(2026, 11, 19, h, m)   # noqa: E731
-assert qa_deep.rate_limit_retry_at({}, D(7, 45), [D(6, 4), D(6, 37)]) == D(11, 14)
-assert qa_deep.rate_limit_retry_at({}, D(11, 14), [D(6, 4), D(6, 37)]) == D(11, 47)   # まだ駄目なら次の生成から
-assert qa_deep.rate_limit_retry_at({}, D(12, 0), [D(6, 4), D(6, 37)]) == D(13, 0)    # 5時間を過ぎても駄目なら60分後
-assert qa_deep.rate_limit_retry_at({}, D(8, 0), [dt.datetime(2026, 11, 18, 18, 0)]) == D(9, 0)   # 古い記録は使わない
-assert qa_deep.rate_limit_retry_at({}, D(8, 0), []) == D(9, 0)
-assert qa_deep.rate_limit_retry_at({}, D(18, 0), [D(17, 0)]) is None              # 22:10 は 22:00 を過ぎる
-assert qa_deep.rate_limit_retry_at({}, D(21, 30), []) is None
-assert qa_deep.rate_limit_retry_at({}, D(23, 30), []) is None   # 日をまたぐ
-assert qa_deep.rate_limit_retry_at({"rate_limit_retry_minutes": 30, "rate_limit_give_up": "23:00"},
-                                   D(22, 15), []) == D(22, 45)
+assert qa_deep.rate_limit_retry_at({}, D(6, 15), D(6, 15)) == D(7, 15)
+assert qa_deep.rate_limit_retry_at({}, D(6, 15), D(11, 20)) == D(12, 20)   # 6回目（20分ごとに見るので少し遅れてもよい）
+assert qa_deep.rate_limit_retry_at({}, D(6, 15), D(12, 20)) is None        # 6時間たった
+assert qa_deep.rate_limit_retry_at({"rate_limit_retry_minutes": 30, "rate_limit_give_up_hours": 2},
+                                   D(22, 0), D(23, 15)) == D(23, 45)
+assert qa_deep.rate_limit_retry_at({}, D(22, 0), D(23, 30)) == dt.datetime(2026, 11, 20, 0, 30)   # 日をまたいでも6時間までは
 assert qa_deep.notebook_settings({}, {}, "x")["rate_limit_wait_minutes"] == []   # その場では待たない
 # 執筆のスレッドの名前: 持ち込んだ会話の最後の行（話した人の名前は外す）
 tn = qa_bot.QABot.thread_name("ルナ: どんな話？\nあなた: 夜の学校で二人きりの話を書いて")
