@@ -1198,9 +1198,47 @@ class QABot(discord.Client):
             except Exception:   # noqa: BLE001
                 log.error("audio loop: %s", traceback.format_exc())
 
+    def give_up_text(self, first: dt.datetime) -> str:
+        hours = float(self.cfg.get("rate_limit_give_up_hours", 6))
+        return f"{first + dt.timedelta(hours=hours):%H:%M} まで" if first else f"{hours:g}時間"
+
+    async def try_stock(self) -> None:
+        """定時の番組（ニュース・学習など）の音声で、NotebookLM に断られて待っているもの（podcast_nlm.STOCK）を作る。
+        1時間おきにやり直し、最初に断られてから6時間で諦める（2026-11-28 本人）。"""
+        import podcast_nlm
+        while True:
+            items = podcast_nlm.stock_items()
+            if not items:
+                return
+            item = items[0]
+            now = dt.datetime.now()
+            if item.get("retry_at") and now < dt.datetime.fromisoformat(item["retry_at"]):
+                return
+            if qa_deep.audio_slots(item["pod"], self.cfg) <= 0:
+                return
+            first = dt.datetime.fromisoformat(item["first_fail"])
+            try:
+                await asyncio.to_thread(podcast_nlm.stock_make, item)
+                log.info("stock audio %s: made", item["id"])
+            except Exception as ex:   # noqa: BLE001
+                retry = qa_deep.rate_limit_retry_at(self.cfg, first) if "RateLimit" in str(ex) else None
+                if retry:
+                    log.info("stock audio %s: RateLimit, retry at %s", item["id"], retry.strftime("%H:%M"))
+                    podcast_nlm.stock_update(item["id"], retry_at=retry.isoformat(timespec="seconds"))
+                    return
+                log.error("stock audio %s: %s", item["id"], ex)
+                why = ("NotebookLM に断られ続けました（" + self.give_up_text(first) + "やり直しても駄目でした）"
+                       if "RateLimit" in str(ex) else str(ex)[:300])
+                await asyncio.to_thread(podcast_nlm.stock_give_up, item, why)
+            podcast_nlm.stock_remove(item["id"])
+
     async def try_audio(self) -> bool:
         """待っている音声を、枠がある限り古い順に作る。1件でも作れたら True。"""
         import podcast_nlm
+        try:
+            await self.try_stock()   # 定時の番組の分（朝に断られたものなど）を先に
+        except Exception:   # noqa: BLE001
+            log.error("stock audio: %s", traceback.format_exc())
         made = False
         while True:
             state = load_state(STATE)
@@ -1226,23 +1264,24 @@ class QABot(discord.Client):
                                   + "".join(f"\n-# 未完了: {t}" for t in got["todo"]),
                                   file=discord.File(got["small"]))
             except Exception as ex:   # noqa: BLE001
-                retry = qa_deep.rate_limit_retry_at(self.cfg) if "RateLimit" in str(ex) else None
-                if retry:   # Google の回数制限。ノートは残して、あとでやり直す
+                first = dt.datetime.fromisoformat(item.get("first_fail") or dt.datetime.now().isoformat())
+                retry = qa_deep.rate_limit_retry_at(self.cfg, first) if "RateLimit" in str(ex) else None
+                if retry:   # Google の回数制限。ノートは残して、1時間おきにやり直す（6時間で諦める）
                     log.info("audio %s: RateLimit, retry at %s", item["qid"], retry.strftime("%H:%M"))
                     if not item.get("retry_at"):
-                        await thread.send(f"🎧 NotebookLM の音声の上限に当たりました（約5時間で戻ります）。"
-                                          f"{retry:%H:%M} ごろにやり直して、できたらここに貼ります"
-                                          f"（{self.cfg.get('rate_limit_give_up', '22:00')} まで）。")
+                        await thread.send(f"🎧 NotebookLM に音声の作成を断られました。{retry:%H:%M} から1時間おきにやり直して、"
+                                          f"できたらここに貼ります（{self.give_up_text(first)}）。")
                     state = load_state(STATE)
                     for p in state.get("pending") or []:
                         if p["qid"] == item["qid"]:
                             p["retry_at"] = retry.isoformat()
+                            p["first_fail"] = first.isoformat(timespec="seconds")
                     save_state(STATE, state)
                     self.notebooks[item["qid"]] = nb
                     return made
                 if "RateLimit" in str(ex):
-                    await thread.send(f"🎧 音声を作れませんでした: NotebookLM の音声の上限が"
-                                      f" {self.cfg.get('rate_limit_give_up', '22:00')} までに戻りませんでした。")
+                    await thread.send("🎧 音声を作れませんでした: NotebookLM に断られ続けました"
+                                      f"（{self.give_up_text(first)}やり直しても駄目でした）。")
                 else:
                     await thread.send(f"🎧 音声を作れませんでした: {str(ex)[:300]}")
             await asyncio.to_thread(nb.close)

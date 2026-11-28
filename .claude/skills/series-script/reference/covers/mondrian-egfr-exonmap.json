@@ -1,0 +1,203 @@
+{
+ "name": "a-exonmap",
+ "seeds": [
+  11,
+  12
+ ],
+ "caption": "A strict De Stijl / Piet Mondrian style abstract composition used as a podcast cover. Pure flat matte color rectangles separated by thick pure black lines, off-white canvas, primary colors only (red, blue, yellow), perfectly straight edges, no gradients, no shadows, no texture, no 3D, no icons, no DNA, extreme minimalism, bold heavy geometric sans-serif typography. (gradient:-2) (dna:-2) (photo:-2) (3d:-2) (glow:-2) The left part is a row of four columns standing for EGFR exons 18 to 21: a blue column, a column with a missing black gap in its middle (a deletion), a narrow yellow column squeezed in (an insertion), and a big red column (a point mutation).",
+ "negative": "gradient, glow, shadow, texture, 3d, photo, dna helix, icons, blurry, misspelled text, garbled characters, watermark, people",
+ "boxes": [
+  {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 672,
+   "type": "obj",
+   "text": "",
+   "desc": "Solid pure black background that shows as thick black grid lines between the rectangles.",
+   "palette": [
+    "#111111"
+   ]
+  },
+  {
+   "x": 0,
+   "y": 0,
+   "w": 170,
+   "h": 470,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat solid blue rectangle.",
+   "palette": [
+    "#1B3D9E"
+   ]
+  },
+  {
+   "x": 188,
+   "y": 0,
+   "w": 200,
+   "h": 170,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat solid off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 188,
+   "y": 330,
+   "w": 200,
+   "h": 140,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat solid off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 406,
+   "y": 0,
+   "w": 80,
+   "h": 470,
+   "type": "obj",
+   "text": "",
+   "desc": "Narrow flat solid yellow rectangle.",
+   "palette": [
+    "#F2C230"
+   ]
+  },
+  {
+   "x": 504,
+   "y": 0,
+   "w": 316,
+   "h": 470,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat solid red rectangle.",
+   "palette": [
+    "#D7261E"
+   ]
+  },
+  {
+   "x": 0,
+   "y": 488,
+   "w": 170,
+   "h": 184,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 30,
+   "y": 530,
+   "w": 110,
+   "h": 100,
+   "type": "text",
+   "text": "18",
+   "desc": "Bold black numerals.",
+   "palette": [
+    "#111111"
+   ]
+  },
+  {
+   "x": 188,
+   "y": 488,
+   "w": 200,
+   "h": 184,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 238,
+   "y": 530,
+   "w": 100,
+   "h": 100,
+   "type": "text",
+   "text": "19",
+   "desc": "Bold black numerals.",
+   "palette": [
+    "#111111"
+   ]
+  },
+  {
+   "x": 406,
+   "y": 488,
+   "w": 80,
+   "h": 184,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 504,
+   "y": 488,
+   "w": 316,
+   "h": 184,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 610,
+   "y": 530,
+   "w": 104,
+   "h": 100,
+   "type": "text",
+   "text": "21",
+   "desc": "Bold black numerals.",
+   "palette": [
+    "#111111"
+   ]
+  },
+  {
+   "x": 838,
+   "y": 0,
+   "w": 442,
+   "h": 672,
+   "type": "obj",
+   "text": "",
+   "desc": "Flat solid off-white rectangle.",
+   "palette": [
+    "#F3EFE6"
+   ]
+  },
+  {
+   "x": 872,
+   "y": 190,
+   "w": 378,
+   "h": 180,
+   "type": "text",
+   "text": "EGFR",
+   "desc": "Huge extra-bold black geometric sans-serif letters, tightly kerned, filling the box.",
+   "palette": [
+    "#111111"
+   ]
+  },
+  {
+   "x": 876,
+   "y": 400,
+   "w": 344,
+   "h": 60,
+   "type": "text",
+   "text": "非小細胞肺がん",
+   "desc": "Bold black Japanese gothic text.",
+   "palette": [
+    "#111111"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,72 @@
+{
+ "name": "f-ytree",
+ "width": 1280,
+ "height": 672,
+ "seeds": [
+  63
+ ],
+ "caption": "An impressionist oil painting, loose visible broken brushstrokes, thick impasto dabs of pure color, soft atmospheric light, simple bold composition that stays readable when shrunk to a tiny phone thumbnail. (photo:-2) (3d:-2) (vector:-2) (anatomy:-2) Pale blue and rose dawn light. On the right glows a red-orange orb; dark red branches reach toward it from the left. Between them stands one luminous white-blue Y-shaped young tree that catches the branches and keeps them from reaching the orb, like an antibody blocking the signal. Calm, symbolic, minimal.",
+ "negative": "photo, photorealistic, 3d render, cgi, sharp vector lines, flat graphic, anime, cartoon, people, faces, medical illustration, anatomy diagram, microscope, syringe, misspelled text, garbled characters, extra text, watermark, frame, signature",
+ "boxes": [
+  {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 672,
+   "type": "obj",
+   "desc": "Pale blue and rose dawn light, broken brushstrokes.",
+   "palette": [
+    "#B9CBE0",
+    "#E8C7C6",
+    "#F2E6D0"
+   ]
+  },
+  {
+   "x": 0,
+   "y": 80,
+   "w": 620,
+   "h": 520,
+   "type": "obj",
+   "desc": "Dark red branches reaching to the right.",
+   "palette": [
+    "#7A2235"
+   ]
+  },
+  {
+   "x": 600,
+   "y": 110,
+   "w": 180,
+   "h": 450,
+   "type": "obj",
+   "desc": "Luminous white-blue Y-shaped young tree.",
+   "palette": [
+    "#F5F8FF",
+    "#9CC0E8"
+   ]
+  },
+  {
+   "x": 880,
+   "y": 210,
+   "w": 220,
+   "h": 220,
+   "type": "obj",
+   "desc": "Red-orange glowing orb.",
+   "palette": [
+    "#E04A2A",
+    "#F29A4A"
+   ]
+  },
+  {
+   "x": 60,
+   "y": 560,
+   "w": 420,
+   "h": 70,
+   "type": "text",
+   "text": "Bevacizumab",
+   "desc": "Small elegant painted serif title text in warm off-white, brushstroke texture.",
+   "palette": [
+    "#F4ECDD"
+   ]
+  }
+ ]
+}

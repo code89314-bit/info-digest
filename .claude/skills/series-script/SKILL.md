@@ -147,11 +147,35 @@ notebooklm list --json         # 認証の確認
 
 ## note に載せる・見出し画像（2026-11-23 試作。公開は本人が確かめてから）
 - 下書き: `.venv\Scripts\python.exe src\series_note.py .local\series\<週ID> --eps 1,2,3 --summary`（各回の記事＋音声、週の「まとめて聴く」=全回の音声を1ページに）。
-  `--dry-run` で `<週>
-ote\` に html だけ。マガジンへの追加・公開は本人が note で行う。
-- 見出し画像はシリーズに1枚（`<週>\cover\series_cover.png`）。**毎回本人がディレクションする**。スマホで小さく縮んでも読める、
-  モンドリアンくらいの抽象（文字は最小）。作るのは ComfyUI の MOSS-Image: `scripts/cover_moss.py <レイアウト.json> --out <dir>`（GPU。Strata を止める）。
-  パイロット版はエクソン18〜21の柱（19=黒い欠け、20=細い黄、21=赤、18=青）＋「EGFR」。
+  `--dry-run` で `<週>\note\` に html だけ。`series_cover.png` があれば見出し画像に入る（先に扉絵を作る）。
+- 公開とマガジンへの追加: 本人が「公開して」と言ったときだけ `src\series_publish.py <週ID> <記事のキー n…>`（先に `--dry-run`）。
+
+## 扉絵（シリーズの見出し画像）とマガジン（2026-11-28 本人「いつでも作れるように」）
+シリーズに1枚（`<週>\cover\series_cover.png`）。記事の見出しとマガジンの画像に同じ絵を使う。**毎回本人がディレクションする**（作風も本人が決める）。
+- これまで: EGFR = モンドリアン風（エクソン18〜21の柱。19=黒い欠け、20=細い黄、21=赤、18=青＋「EGFR」）、
+  ベバシズマブ = 印象派風（夕暮れの川の支流が赤く光る湖に集まる＝血管が腫瘍に呼ばれる＋「Bevacizumab」）。
+- 決まり: スマホで幅200px ほどに縮んでも読める（大きな形・強い対比・焦点は1つ）。文字は最小（薬・遺伝子の名前だけ。長い題は記事のタイトルに任せる）。
+  絵の中身はその週の芯の意味のある抽象（ありきたりな DNA のらせんなどは×）。人・顔・解剖図・注射器は入れない。
+- 手順:
+  1. **GPU を ComfyUI に**（21:00〜25:00 は本人のコアタイムなので避ける。定時の前には戻す）:
+     `powershell -NoProfile -ExecutionPolicy Bypass -File D:\Strata\scripts\comfy-mode.ps1`
+     （Strata を止め、Docker Desktop を起こし、comfyui だけ動かす。直後は :8188 がまだ答えないことがあるので `/system_stats` が返るまで待つ）。
+  2. **案を作る**: レイアウトの JSON を案ごとに書き（`<週>\cover\<記号>-<名前>.json`）、
+     `.venv\Scripts\python.exe -X utf8 .claude\skills\series-script\scripts\cover_moss.py <a.json> <b.json> ... --out .local\series\<週ID>\cover`。
+     見本は `reference/covers/`（モンドリアン = `mondrian-egfr-exonmap.json`、印象派 = `impressionist-bev-delta.json`・`impressionist-bev-ytree.json`）。
+     JSON の要点: `caption` に作風と絵の意味（NegPip の `(photo:-2)` などで避けたいものを弱める）、`boxes` は背景→前景の順で、
+     焦点の物の位置と色（`palette`）、文字は `type: "text"` の箱に正確な綴り。1280×672、1案に seed 1〜2個（1枚 約1分）。
+     1回目は3案×2枚、本人が「ほかも見たい」と言えば趣向の違う案を足す（ベバシズマブは9案から選んだ）。
+  3. **比べる一覧**: `scripts/cover_sheet.py <png...> --out <週>\cover\sheet.png [--first D]`（各案の右上にスマホ大の縮小つき）→
+     SendUserFile で本人に送り、記号と一言の説明・縮んだときの見え方・おすすめを添えて選んでもらう。直しの指示があれば JSON を直して作り直す。
+  4. 決まったら `series_cover.png` に写す。**Strata に戻す**: `docker stop comfyui` →
+     `D:\Strata\terminal\current\bin\strata.cmd launch --preset 'Qwen36 32K' --no-tui --yes`（別窓で）→ `D:\Strata\comfy-mode.flag` を消す →
+     `http://127.0.0.1:8080/health` が返るまで確かめる（llm-mode.ps1 は Docker を丸ごと止めるので使わない）。
+- **マガジン**（週ごとに1つ、無料・**非公開**で作る。名前は本人に聞く。例「がん種: 【EGFR遺伝子変異陽性 非小細胞肺がん】」「薬: 【ベバシズマブ】」。
+  `series_publish.py` は週の題（state.json の title）を含む名前で探すので、題を名前に入れる）:
+  `.venv\Scripts\python.exe -X utf8 .claude\skills\series-script\scripts\note_magazine.py --title "<名前>" --desc "<説明>" --cover <週>\cover\series_cover.png --out <週>\cover`
+  → まず `--go` なしで `magazine-form.png` を見て（無料・非公開・画像・題・説明）、よければ `--go`。できたマガジンの URL を本人に知らせる。
+  説明文: 対象（がん薬物療法に関わる薬剤師向けの学習）・切り口と回数・一次資料に基づくこと・記事と AI 音声（NotebookLM）・個別の判断は原文で。
 
 ## 読み上げソフトを比べたころのメモ（2026-11-20〜23。いまは使わない）
 - **Gemini**: `scripts/tts_gemini.py <週のフォルダ> <n> --model gemini-3.8-flash-tts`（`--lines N`・`--start K` で一部だけ）。

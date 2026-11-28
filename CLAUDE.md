@@ -30,6 +30,7 @@
     Strata が止まっていたら、理由（`gpu_mode.llm_down_reason`。例「ComfyUI が起動していますが、生成はしていません」）を出して、起動するか「はい／いいえ」で聞く（2026-11-26 本人）。
   - しらべ（トーク、`src/strata_chat.py`、`style/personas/shirabe.yaml`）: 雑談は Qwen3.6。調べものは NotebookLM（下記）。
   - ルナ（専用チャンネル）: 会話・小説は Gemma、絵は ComfyUI。
+  - NotebookLM に音声を断られたら（RateLimit）: ギモン深堀りも定時の番組（ニュース・学習・AI ダイジェスト。`podcast_nlm.run`）も、待ちの列に入れて Bot が1時間おきにやり直し、最初に断られてから6時間で諦める（`qa_bot.rate_limit_retry_minutes`・`rate_limit_give_up_hours`。定時の番組の列は `<state>/audio_stock.json`。2026-11-28 本人）。
   - Bot のコードを変えたら、`qa_bot.py` の python を止めれば60秒後に新しいコードで立ち上がる。
 - **ローカル LLM**: Strata（`D:\Strata`、プリセット「Qwen36 32K」、Qwen3.6-35B-A3B UD-Q4_K_XL、:8080、Tailscale で外からも）。
   ルナのときだけ Gemma 4 26B heretic（llama.cpp :8090、`D:\Strata\scripts\luna-mode.ps1`）。同時には動かない（VRAM）。
